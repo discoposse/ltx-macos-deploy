@@ -1,0 +1,77 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Inference Duration by Stage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ltx_duration_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "{{stage}} P95"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "ltx_memory_bytes", "legendFormat": "{{type}}" }
+      ]
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Run Logs (filter by run_id)",
+      "type": "logs",
+      "targets": [
+        {
+          "expr": "{job=\"ltx-inference\"} |= ``",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["ltx", "inference"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "" },
+        "name": "run_id",
+        "query": "label_values(ltx_runs_total, run_id)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "LTX-2 Inference Observability",
+  "uid": "ltx-inference",
+  "version": 1
+}
