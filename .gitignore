@@ -1,0 +1,30 @@
+# LTX macOS Deployment .gitignore
+# Keep this repo clean — only deployment scripts, prompts, and docs
+
+# Ignore large model files and official LTX source
+LTX-2/
+models/
+output*.mp4
+*.safetensors
+*.bin
+
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Generated outputs
+outputs/
+*.mp4
+*.mov
+*.avi
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary setup files
+setup-ltx-macos.sh.bak
