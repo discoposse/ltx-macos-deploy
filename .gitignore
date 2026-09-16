@@ -1,5 +1,6 @@
 # LTX macOS Deployment .gitignore
-# Keep this repo clean — only deployment scripts, prompts, and docs
+# Keep this repo clean — only deployment scripts, sample prompts, and docs.
+# Do not track your personal prompts, experiments, or custom generation scripts.
 
 # Ignore large model files and official LTX source
 LTX-2/
@@ -7,6 +8,14 @@ models/
 output*.mp4
 *.safetensors
 *.bin
+
+# Personal prompts and custom work (untracked by default)
+prompts/*.txt
+!prompts/README.md
+!prompts/*.sample
+prompts/*.sh
+custom_*.sh
+my-*.sh
 
 # Virtual environment
 .venv/

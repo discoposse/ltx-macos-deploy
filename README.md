@@ -1,49 +1,74 @@
-# LTX-2 macOS Deployment (Private Repo)
+# LTX-2 macOS Deployment Kit
 
-This repository contains **only** our deployment, setup, and prompt workflow for running LTX-2 on Apple Silicon (M1/M2/M3/M4).
+This repository is a lightweight, reproducible setup for running LTX-2 video generation on Apple Silicon Macs (M1/M2/M3/M4 with 16 GB or more RAM).
 
-It does **not** contain the full LTX source tree — it pulls what it needs from the official repo during setup.
+It contains only the files needed for easy deployment:
+- A one-command setup script
+- Tuned wrapper scripts optimized for Mac memory and performance
+- A prompts folder for your own creative work
+
+The full LTX-2 codebase and model weights (~66 GB) are pulled from the official repository during setup. This keeps the project small and focused on the macOS workflow.
 
 ## Quick Start
 
-```bash
-# 1. Run the setup (downloads models ~66GB, creates venv, installs our scripts)
-curl -O https://raw.githubusercontent.com/yourusername/ltx-macos-deploy/main/setup-ltx-macos.sh
-chmod +x setup-ltx-macos.sh
-./setup-ltx-macos.sh
-```
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/discoposse/ltx-macos-deploy.git
+   cd ltx-macos-deploy
+   ```
+
+2. Run the setup:
+   ```bash
+   ./setup-ltx-macos.sh
+   ```
 
 ## Usage
+
+After setup, generate videos from the LTX-2 directory:
 
 ```bash
 cd LTX-2
 
-# Fast generation (recommended for 16GB RAM)
-./generate_macos.sh "A serene Japanese garden at dawn with koi fish swimming in a pond, gentle mist, cinematic lighting"
+# Fast generation (recommended for 16 GB RAM)
+./generate_macos.sh "A serene Japanese garden at dawn with koi fish swimming in the pond, gentle mist, cinematic lighting"
 
-# Production quality (DFR + detailing LoRA)
+# Higher quality (DFR with detailing LoRA)
 ./dfr_generate_macos.sh "Same prompt here"
 ```
 
-You can pass a second argument for custom output filename:
+You can supply a custom output filename as the second argument:
 
 ```bash
-./generate_macos.sh "your prompt" my-cool-video.mp4
+./generate_macos.sh "your prompt" my-video.mp4
 ```
 
-## Files
+## Updating
 
-- `setup-ltx-macos.sh` — One-command setup (models + venv + our scripts)
-- `generate_macos.sh` — Tuned DistilledPipeline for M1 16GB (384x640, offload cpu, chunked_eager)
-- `dfr_generate_macos.sh` — DFR production pipeline (needs the IC-LoRA)
-- `prompts/` — (add this folder) — store your prompt library, experiments, etc.
+To get the latest scripts and improvements:
 
-## Philosophy
+```bash
+git pull
+```
 
-- Keep this repo **clean** and focused on deployment, prompts, and our custom wrappers.
-- Never commit the full `packages/` or large model files.
-- The setup script pulls the official LTX-2 code and models on first run.
+Re-run `./setup-ltx-macos.sh` if the environment or wrappers have changed.
 
-This gives you a private, shareable, reproducible workflow separate from the main LTX-2 repository.
+## Prompts and Your Own Work
 
-Happy generating!
+The `prompts/` folder is the place for your prompt library, experiments, and any custom generation scripts you create.
+
+**Do not commit your personal prompts or custom scripts to git.**  
+Add patterns like `prompts/*.txt` (except the sample files) or your own scripts to `.gitignore`. This keeps the repository clean while giving you a convenient place to store the work you build over time.
+
+The few sample prompts included are just starting points.
+
+## What's Included
+
+- `setup-ltx-macos.sh` — Clones/updates LTX-2, sets up the virtual environment, installs dependencies, and installs the tuned wrappers
+- `generate_macos.sh` — Memory-tuned distilled pipeline (CPU offload, low resolution, chunked VAE decode)
+- `dfr_generate_macos.sh` — Production DFR pipeline with detailing IC-LoRA (requires the extra LoRA download)
+- `prompts/` — Your prompt collection (keep personal files untracked)
+- `observability/` — Optional monitoring setup (Prometheus/Grafana)
+
+This kit gives you a clean, repeatable macOS deployment that stays separate from the upstream LTX-2 codebase.
+
+Happy generating.
