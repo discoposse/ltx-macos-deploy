@@ -23,6 +23,12 @@ fi
 
 # 2. Create virtual environment and install dependencies
 echo "Creating virtual environment and installing dependencies..."
+# The official LTX-2 repo does not commit uv.lock (it's gitignored).
+# On a fresh clone we must generate it first. --frozen then works reliably.
+if [ ! -f "uv.lock" ]; then
+  echo "No uv.lock found (fresh clone). Running uv lock..."
+  uv lock
+fi
 uv sync --frozen
 
 # 3. Download the required model weights (split layout for LTX-2.5 distilled)
