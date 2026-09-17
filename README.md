@@ -16,7 +16,12 @@ cd ltx-macos-deploy
 ./start-lab.sh
 ```
 
-The UI will open automatically. Use the sidebar to navigate between **Generate**, **Traces**, **Observability**, **Library**, and **Info**.
+The UI will open automatically. Use the tabs to navigate between **Generate** (live console), **Traces** (MLflow), **Observability**, **Library**, and **Info**.
+
+To stop everything cleanly:
+```bash
+./stop-lab.sh
+```
 
 All previous CLI scripts (`generate_macos.sh`, `dfr_generate_macos.sh`) still work, but the web interface is now the recommended way to work.
 

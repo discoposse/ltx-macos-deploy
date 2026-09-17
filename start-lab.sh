@@ -31,10 +31,11 @@ MLFLOW_BIN="./LTX-2/.venv/bin/mlflow"
 if [ -x "$MLFLOW_BIN" ]; then
   # Kill any existing process on port 5001
   lsof -ti:5001 | xargs kill -9 2>/dev/null || true
-  sleep 1
+  sleep 2
 
   # Use port 5001 to avoid macOS ControlCenter conflict on port 5000
-  "$MLFLOW_BIN" ui --port 5001 --host 0.0.0.0 --allowed-hosts localhost,127.0.0.1,0.0.0.0 > /tmp/mlflow.log 2>&1 &
+  # --no-verify-hostname disables the DNS rebinding protection that is triggering "Invalid Host header"
+  "$MLFLOW_BIN" ui --port 5001 --host 0.0.0.0 --allowed-hosts localhost,127.0.0.1,0.0.0.0 --no-verify-hostname > /tmp/mlflow.log 2>&1 &
   MLFLOW_PID=$!
   echo "MLflow started with PID $MLFLOW_PID on port 5001"
 else
@@ -46,8 +47,12 @@ fi
 echo "→ Starting LTX Lab Web UI on http://localhost:8501 ..."
 echo ""
 echo "All instructions, generation controls, MLflow traces, and observability dashboards are now inside the UI."
-echo "Open the link below and explore the tabs."
+echo "Open http://localhost:8501 (Gradio) and http://localhost:5001 (MLflow)"
 echo ""
+
+# Kill any existing process on port 8501 first
+lsof -ti:8501 | xargs kill -9 2>/dev/null || true
+sleep 2
 
 # Use the venv from LTX-2 (contains gradio + mlflow)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,15 +60,11 @@ PROJECT_ROOT="$SCRIPT_DIR"
 VENV_PYTHON="$PROJECT_ROOT/LTX-2/.venv/bin/python"
 
 export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
-echo "MLflow tracking URI set to: $MLFLOW_TRACKING_URI"
-echo "MLflow UI: http://localhost:5001"
-echo "Lab UI: http://localhost:8501"
-echo ""
 
 cd webui
 
 if [ -x "$VENV_PYTHON" ]; then
-  echo "Launching Gradio app with: $VENV_PYTHON"
+  echo "Launching Gradio app (foreground)..."
   "$VENV_PYTHON" app.py
 else
   echo "Error: Python venv not found at $VENV_PYTHON"
