@@ -42,38 +42,32 @@ else
   MLFLOW_PID=0
 fi
 
-# 3. Start Streamlit WebUI (the main lab interface with all instructions)
+# 3. Start Gradio WebUI (the main lab interface with all instructions)
 echo "→ Starting LTX Lab Web UI on http://localhost:8501 ..."
 echo ""
 echo "All instructions, generation controls, MLflow traces, and observability dashboards are now inside the UI."
-echo "Open the link below and explore the sidebar."
+echo "Open the link below and explore the tabs."
 echo ""
 
-# Use the venv from LTX-2 (contains streamlit + mlflow)
-# Resolve project root correctly (dirname $0 may be LTX-2 when run from inside it)
+# Use the venv from LTX-2 (contains gradio + mlflow)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
-VENV_STREAMLIT="$PROJECT_ROOT/LTX-2/.venv/bin/streamlit"
+VENV_PYTHON="$PROJECT_ROOT/LTX-2/.venv/bin/python"
 
-echo "Debug: Using PROJECT_ROOT=$PROJECT_ROOT"
-echo "Debug: Looking for streamlit at $VENV_STREAMLIT"
-ls -la "$VENV_STREAMLIT" 2>&1 | cat
+export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
+echo "MLflow tracking URI set to: $MLFLOW_TRACKING_URI"
+echo "MLflow UI: http://localhost:5001"
+echo "Lab UI: http://localhost:8501"
+echo ""
 
-if [ -x "$VENV_STREAMLIT" ]; then
-  # Set MLflow tracking to local directory for persistence
-  export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
-  echo "MLflow tracking URI set to: $MLFLOW_TRACKING_URI"
-  echo "MLflow UI: http://localhost:5001"
-  echo "Streamlit Lab: http://localhost:8501"
-  echo ""
-  cd webui
-  echo "Launching with: $VENV_STREAMLIT"
-  "$VENV_STREAMLIT" run app.py --server.port 8501 --server.address 0.0.0.0
+cd webui
+
+if [ -x "$VENV_PYTHON" ]; then
+  echo "Launching Gradio app with: $VENV_PYTHON"
+  "$VENV_PYTHON" app.py
 else
-  echo "Error: Streamlit not found in LTX-2 venv."
-  echo "Tried: $VENV_STREAMLIT"
+  echo "Error: Python venv not found at $VENV_PYTHON"
   echo "Please run: cd LTX-2 && uv sync --group dev"
-  echo "Then try ./start-lab.sh again from the project root."
   exit 1
 fi
 

@@ -12,7 +12,7 @@ git clone https://github.com/discoposse/ltx-macos-deploy.git
 cd ltx-macos-deploy
 ./setup-ltx-macos.sh
 
-# 2. Start the full lab (MLflow UI + Streamlit frontend + observability stack)
+# 2. Start the full lab (MLflow UI + Gradio frontend + observability stack)
 ./start-lab.sh
 ```
 
@@ -22,7 +22,7 @@ All previous CLI scripts (`generate_macos.sh`, `dfr_generate_macos.sh`) still wo
 
 ## Project Structure (clean & minimal)
 
-- `start-lab.sh` — Single entry point that launches MLflow, Streamlit, and the observability containers
+- `start-lab.sh` — Single entry point that launches MLflow, Gradio, and the observability containers
 - `webui/` — All frontend code and instructions (no more scattered READMEs)
 - `setup-ltx-macos.sh` — One-time environment and model setup
 - `prompts/` — Your personal prompt library (personal files are gitignored)
