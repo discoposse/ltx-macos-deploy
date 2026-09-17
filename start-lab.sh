@@ -26,15 +26,17 @@ docker rm rackn-competitour-auth 2>/dev/null || true
 (cd observability && docker compose up -d --quiet-pull)
 
 # 2. Start MLflow UI (traces + experiment tracking)
-echo "→ Starting MLflow UI on http://localhost:5000 ..."
+echo "→ Starting MLflow UI on http://localhost:5001 ..."
 MLFLOW_BIN="./LTX-2/.venv/bin/mlflow"
 if [ -x "$MLFLOW_BIN" ]; then
-  # Kill any existing MLflow on port 5000 to avoid "address already in use"
-  lsof -ti:5000 | xargs kill -9 2>/dev/null || true
-  # Use --host 0.0.0.0 + --allowed-hosts to bypass macOS localhost security restrictions
-  "$MLFLOW_BIN" ui --port 5000 --host 0.0.0.0 --allowed-hosts localhost,127.0.0.1 > /tmp/mlflow.log 2>&1 &
+  # Kill any existing process on port 5001
+  lsof -ti:5001 | xargs kill -9 2>/dev/null || true
+  sleep 1
+
+  # Use port 5001 to avoid macOS ControlCenter conflict on port 5000
+  "$MLFLOW_BIN" ui --port 5001 --host 0.0.0.0 --allowed-hosts localhost,127.0.0.1,0.0.0.0 > /tmp/mlflow.log 2>&1 &
   MLFLOW_PID=$!
-  echo "MLflow started with PID $MLFLOW_PID (bound to localhost)"
+  echo "MLflow started with PID $MLFLOW_PID on port 5001"
 else
   echo "Warning: mlflow not found in venv. Install with: cd LTX-2 && uv sync --group dev"
   MLFLOW_PID=0
@@ -61,7 +63,7 @@ if [ -x "$VENV_STREAMLIT" ]; then
   # Set MLflow tracking to local directory for persistence
   export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
   echo "MLflow tracking URI set to: $MLFLOW_TRACKING_URI"
-  echo "MLflow UI: http://localhost:5000"
+  echo "MLflow UI: http://localhost:5001"
   echo "Streamlit Lab: http://localhost:8501"
   echo ""
   cd webui
