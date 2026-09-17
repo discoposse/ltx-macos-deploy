@@ -18,6 +18,11 @@ cd "$(dirname "$0")"
 echo "→ Starting observability stack (Grafana on :3000, Prometheus on :9090)..."
 echo "   (Stopping any old conflicting containers first to avoid port conflicts)"
 (cd observability && docker compose down --remove-orphans 2>/dev/null || true)
+
+# Also stop any unrelated containers that may be using common dev ports (e.g. 8080 from other projects)
+docker stop rackn-competitour-auth 2>/dev/null || true
+docker rm rackn-competitour-auth 2>/dev/null || true
+
 (cd observability && docker compose up -d --quiet-pull)
 
 # 2. Start MLflow UI (traces + experiment tracking)
