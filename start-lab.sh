@@ -20,8 +20,17 @@ echo "→ Starting observability stack (Grafana on :3000, Prometheus on :9090)..
 
 # 2. Start MLflow UI (traces + experiment tracking)
 echo "→ Starting MLflow UI on http://localhost:5000 ..."
-mlflow ui --port 5000 --host 0.0.0.0 > /tmp/mlflow.log 2>&1 &
-MLFLOW_PID=$!
+MLFLOW_BIN="./LTX-2/.venv/bin/mlflow"
+if [ -x "$MLFLOW_BIN" ]; then
+  # Kill any existing MLflow on port 5000 to avoid "address already in use"
+  lsof -ti:5000 | xargs kill -9 2>/dev/null || true
+  "$MLFLOW_BIN" ui --port 5000 --host 127.0.0.1 > /tmp/mlflow.log 2>&1 &
+  MLFLOW_PID=$!
+  echo "MLflow started with PID $MLFLOW_PID (bound to localhost)"
+else
+  echo "Warning: mlflow not found in venv. Install with: cd LTX-2 && uv sync --group dev"
+  MLFLOW_PID=0
+fi
 
 # 3. Start Streamlit WebUI (the main lab interface with all instructions)
 echo "→ Starting LTX Lab Web UI on http://localhost:8501 ..."
@@ -31,9 +40,16 @@ echo "Open the link below and explore the sidebar."
 echo ""
 
 # Use the venv from LTX-2 (contains streamlit + mlflow)
-LTX_VENV="./LTX-2/.venv/bin/python"
+# Resolve project root correctly (dirname $0 may be LTX-2 when run from inside it)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+VENV_STREAMLIT="$PROJECT_ROOT/LTX-2/.venv/bin/streamlit"
 
-if [ -f "$LTX_VENV" ]; then
+echo "Debug: Using PROJECT_ROOT=$PROJECT_ROOT"
+echo "Debug: Looking for streamlit at $VENV_STREAMLIT"
+ls -la "$VENV_STREAMLIT" 2>&1 | cat
+
+if [ -x "$VENV_STREAMLIT" ]; then
   # Set MLflow tracking to local directory for persistence
   export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
   echo "MLflow tracking URI set to: $MLFLOW_TRACKING_URI"
@@ -41,9 +57,13 @@ if [ -f "$LTX_VENV" ]; then
   echo "Streamlit Lab: http://localhost:8501"
   echo ""
   cd webui
-  "$LTX_VENV" -m streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+  echo "Launching with: $VENV_STREAMLIT"
+  "$VENV_STREAMLIT" run app.py --server.port 8501 --server.address 0.0.0.0
 else
-  echo "Error: LTX-2 venv not found. Please run ./setup-ltx-macos.sh first."
+  echo "Error: Streamlit not found in LTX-2 venv."
+  echo "Tried: $VENV_STREAMLIT"
+  echo "Please run: cd LTX-2 && uv sync --group dev"
+  echo "Then try ./start-lab.sh again from the project root."
   exit 1
 fi
 
