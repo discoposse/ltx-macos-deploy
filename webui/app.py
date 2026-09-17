@@ -87,9 +87,9 @@ elif page == "Traces":
     st.title("MLflow Traces")
     st.markdown("All generations are automatically traced with nested spans (text encoder → transformer → VAE → upsampler).")
     
-    st.info("MLflow UI is running at http://localhost:5000 (localhost only for security).")
+    st.info("MLflow UI is running at http://localhost:5000")
     st.link_button("Open MLflow UI →", "http://localhost:5000")
-    st.caption("If you get 'access denied', make sure you are accessing it from the same machine (not remotely).")
+    st.caption("If you still get 'Access to localhost was denied', try refreshing or restarting the lab (`Ctrl+C` then `./start-lab.sh` again).")
 
     st.subheader("Recent Runs")
     st.write("Run history with direct trace links will appear here (connected to mlruns/).")

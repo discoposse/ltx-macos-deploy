@@ -31,7 +31,8 @@ MLFLOW_BIN="./LTX-2/.venv/bin/mlflow"
 if [ -x "$MLFLOW_BIN" ]; then
   # Kill any existing MLflow on port 5000 to avoid "address already in use"
   lsof -ti:5000 | xargs kill -9 2>/dev/null || true
-  "$MLFLOW_BIN" ui --port 5000 --host 127.0.0.1 > /tmp/mlflow.log 2>&1 &
+  # Use --host 0.0.0.0 + --allowed-hosts to bypass macOS localhost security restrictions
+  "$MLFLOW_BIN" ui --port 5000 --host 0.0.0.0 --allowed-hosts localhost,127.0.0.1 > /tmp/mlflow.log 2>&1 &
   MLFLOW_PID=$!
   echo "MLflow started with PID $MLFLOW_PID (bound to localhost)"
 else
