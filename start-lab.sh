@@ -16,6 +16,8 @@ cd "$(dirname "$0")"
 
 # 1. Start observability stack (Prometheus, Grafana, Loki) in background
 echo "→ Starting observability stack (Grafana on :3000, Prometheus on :9090)..."
+echo "   (Stopping any old conflicting containers first to avoid port conflicts)"
+(cd observability && docker compose down --remove-orphans 2>/dev/null || true)
 (cd observability && docker compose up -d --quiet-pull)
 
 # 2. Start MLflow UI (traces + experiment tracking)
@@ -68,4 +70,4 @@ else
 fi
 
 # Cleanup on exit (best effort)
-trap 'kill $MLFLOW_PID 2>/dev/null || true; (cd ../observability && docker compose down)' EXIT
+trap 'kill $MLFLOW_PID 2>/dev/null || true; (cd observability && docker compose down --remove-orphans)' EXIT
