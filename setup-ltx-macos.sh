@@ -50,25 +50,29 @@ hf download Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler \
   ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors \
   --local-dir models/ltx-2.5/loras || echo "LoRA download skipped (approve on HF if needed)."
 
-# 5. Copy our tuned wrapper scripts
-echo "Installing our custom macOS-tuned generation scripts..."
+# 5. Copy our tuned wrapper scripts + lab launcher
+echo "Installing our custom macOS-tuned generation scripts and lab launcher..."
 cp ../generate_macos.sh .
 cp ../dfr_generate_macos.sh .
-chmod +x generate_macos.sh dfr_generate_macos.sh
+cp ../start-lab.sh .
+chmod +x generate_macos.sh dfr_generate_macos.sh start-lab.sh
 
 echo ""
 echo "=== Setup Complete! ==="
-echo "To generate video:"
-echo "  cd LTX-2"
-echo "  ./generate_macos.sh \"your prompt here\""
 echo ""
-echo "For higher quality (once LoRA is downloaded):"
-echo "  ./dfr_generate_macos.sh \"your prompt here\""
+echo "The full LTX Lab is ready."
 echo ""
-echo "Next steps for your private repo:"
-echo "1. Create a new private GitHub repo (e.g. ltx-macos-deploy)"
-echo "2. Copy this setup-ltx-macos.sh, generate_macos.sh, dfr_generate_macos.sh, and prompts/ folder into it"
-echo "3. Add a README with usage instructions"
-echo "4. git init, commit, and push — this repo will stay clean of the full LTX source."
+echo "Launch everything with one command:"
+echo "  ./start-lab.sh"
 echo ""
-echo "You now have a reproducible deployment flow separate from the main LTX-2 codebase."
+echo "This starts:"
+echo "  • Streamlit Web UI (http://localhost:8501) — all instructions, generation, traces, and dashboards"
+echo "  • MLflow UI (http://localhost:5000) — full nested inference traces"
+echo "  • Observability stack (Grafana + Prometheus)"
+echo ""
+echo "All previous documentation has been moved into the UI. The web interface is now the single source of truth."
+echo ""
+echo "You can still use the CLI wrappers directly if preferred:"
+echo "  cd LTX-2 && ./generate_macos.sh \"your prompt\""
+echo ""
+echo "Happy generating! The lab is designed to feel like a complete creative studio."
