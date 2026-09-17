@@ -34,6 +34,11 @@ Thumbs.db
 
 # Logs
 *.log
+/tmp/mlflow.log
+
+# MLflow local database and run storage (machine-specific, do not commit)
+mlflow.db
+mlruns/
 
 # Temporary setup files
 setup-ltx-macos.sh.bak
