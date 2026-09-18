@@ -1,0 +1,1728 @@
+@use '@carbon/styles/scss/config' with (
+  $font-path: '@ibm/plex'
+);
+@use '@carbon/react';
+@use '@carbon/styles/scss/theme' as *;
+@use '@carbon/styles/scss/spacing' as *;
+@use '@carbon/styles/scss/type' as *;
+@use './theme/ddn' as ddn;
+
+// DDN brand page chrome (https://www.ddn.com/company/brand-assets/)
+$page-bg: ddn.$ddn-page-bg;
+
+html {
+  height: 100%;
+  background-color: $page-bg !important;
+  border-radius: 0 !important;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  background-color: $page-bg !important;
+  color: ddn.$ddn-text;
+  border-radius: 0 !important;
+}
+
+body {
+  background-color: $page-bg !important;
+  // kill overscroll / bounce flash of white on some browsers
+  overscroll-behavior: none;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  background-color: $page-bg !important;
+  border-radius: 0 !important;
+}
+
+// Carbon Theme root: cds--g100 + cds--layer-one — force full-bleed, no card look
+.lab-theme,
+.cds--g100.cds--layer-one,
+#root > .cds--g100,
+#root > .lab-theme {
+  flex: 1 1 auto;
+  min-height: 100%;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--cds-background, $page-bg) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible;
+}
+
+.lab-console {
+  flex: 1 1 auto;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--cds-background, $page-bg) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+// Content: square, full width, dark fill under fixed header
+.lab-console__main.cds--content,
+.cds--content.lab-console__main,
+.cds--content,
+.lab-console__main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0 !important;
+  margin-block-start: 3rem !important; // header height only
+  padding: $spacing-07 $spacing-07 $spacing-09;
+  box-sizing: border-box;
+  background-color: var(--cds-background, $page-bg) !important;
+  min-height: calc(100dvh - 3rem);
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+// Constrain readable width for most tabs
+.lab-console__main > * {
+  max-width: 96rem;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+// Docs tab: wider content column
+.lab-console__main--docs > *,
+.lab-console__main--compare > *,
+.lab-console__main--observe > * {
+  max-width: 100rem;
+}
+
+.lab-console__main .footer-note {
+  max-width: 96rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.lab-console__section {
+  margin-bottom: $spacing-09;
+}
+
+.lab-console__section--docs {
+  margin-bottom: $spacing-05;
+}
+
+
+
+.lab-console__section-title {
+  @include type-style('heading-03');
+  margin-bottom: $spacing-05;
+}
+
+.lab-console__section-desc {
+  @include type-style('body-01');
+  color: $text-secondary;
+  margin-bottom: $spacing-06;
+  max-width: 48rem;
+}
+
+.hero-title {
+  @include type-style('heading-06');
+  margin: 0 0 $spacing-04;
+  max-width: 52rem;
+}
+
+.hero-copy {
+  @include type-style('body-02');
+  color: $text-secondary;
+  margin: 0;
+  max-width: 54rem;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-07;
+  margin-bottom: $spacing-07;
+}
+
+.section-heading-row .config-actions {
+  margin: 0;
+}
+
+.readiness-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-05;
+  padding: $spacing-05;
+  margin-bottom: $spacing-05;
+  background: $layer-01;
+  border-top: 1px solid $border-subtle-01;
+  border-bottom: 1px solid $border-subtle-01;
+}
+
+.readiness-banner > div,
+.readiness-banner__summary {
+  display: flex;
+  align-items: center;
+  gap: $spacing-03;
+}
+
+.readiness-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: $support-error;
+  box-shadow: 0 0 0 4px rgba(218, 30, 40, 0.16);
+}
+
+.readiness-dot--healthy {
+  background: $support-success;
+  box-shadow: 0 0 0 4px rgba(36, 161, 72, 0.16);
+}
+
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: $spacing-04;
+}
+
+.resource-card {
+  min-height: 10.5rem;
+  border-top: 3px solid $border-subtle-01;
+}
+
+.resource-card--up {
+  border-top-color: $support-success;
+}
+
+.resource-card--down {
+  border-top-color: $support-error;
+}
+
+.resource-card__top,
+.result-heading,
+.storage-panel__intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-04;
+}
+
+.resource-card__kind {
+  @include type-style('label-01');
+  color: $text-secondary;
+  text-transform: uppercase;
+}
+
+.resource-card h3 {
+  @include type-style('heading-compact-02');
+  margin: $spacing-05 0 $spacing-03;
+}
+
+.resource-card__detail,
+.resource-card__fix {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.resource-card__fix {
+  margin-top: $spacing-04;
+  color: $support-warning;
+}
+
+.workload-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: $spacing-06;
+  background: $border-subtle-01;
+  border: 1px solid $border-subtle-01;
+}
+
+.workload-card {
+  min-height: 8.5rem;
+  padding: $spacing-05;
+  color: $text-primary;
+  background: $layer-01;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workload-card:hover {
+  background: $layer-hover-01;
+}
+
+.workload-card--selected {
+  border-bottom-color: ddn.$ddn-steel-blue;
+  background: $layer-selected-01;
+}
+
+.workload-card span {
+  @include type-style('heading-compact-02');
+  display: block;
+  margin-bottom: $spacing-04;
+}
+
+.workload-card small {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+}
+
+.benchmark-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(20rem, 0.75fr);
+  gap: $spacing-05;
+  margin-bottom: $spacing-05;
+}
+
+.lmcache-guide {
+  margin-bottom: $spacing-05;
+  border-top: 3px solid ddn.$ddn-steel-blue;
+}
+
+.lmcache-guide__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $spacing-06;
+  margin-bottom: $spacing-05;
+}
+
+.lmcache-guide__heading p {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  max-width: 48rem;
+  margin: $spacing-03 0 0;
+}
+
+.lmcache-guide__heading .config-actions {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.lmcache-guide__diagram {
+  display: block;
+  width: 100%;
+  height: 32rem;
+  border: 1px solid $border-subtle-01;
+  background: ddn.$ddn-page-bg;
+}
+
+.lmcache-guide__steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1px;
+  background: $border-subtle-01;
+}
+
+.lmcache-guide__step {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  gap: $spacing-03;
+  align-items: start;
+  min-height: 6.5rem;
+  padding: $spacing-04;
+  background: $layer-02;
+}
+
+.lmcache-guide__step > span {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid ddn.$ddn-steel-blue;
+  border-radius: 50%;
+  color: ddn.$ddn-link;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .75rem;
+}
+
+.lmcache-guide__step strong,
+.lmcache-guide__step small {
+  display: block;
+}
+
+.lmcache-guide__step strong {
+  @include type-style('heading-compact-01');
+}
+
+.lmcache-guide__step small {
+  @include type-style('label-01');
+  color: $text-secondary;
+  margin-top: $spacing-02;
+}
+
+.cache-switcher {
+  margin-bottom: $spacing-05;
+  border-top: 3px solid ddn.$ddn-steel-blue;
+}
+
+.cache-switcher__heading,
+.cache-switcher__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: $spacing-06;
+  align-items: start;
+}
+
+.cache-switcher__heading {
+  padding-bottom: $spacing-05;
+  border-bottom: 1px solid $border-subtle-01;
+}
+
+.cache-switcher__heading p,
+.cache-switcher__controls > p,
+.cache-switcher__restart {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  max-width: 52rem;
+  margin: $spacing-03 0 0;
+}
+
+.cache-switcher__body {
+  grid-template-columns: minmax(18rem, 0.8fr) minmax(22rem, 1.2fr);
+  margin: $spacing-05 0;
+}
+
+.cache-preflight {
+  border-left: 1px solid $border-subtle-01;
+  padding-left: $spacing-05;
+}
+
+.cache-preflight__title {
+  @include type-style('heading-compact-01');
+  margin-bottom: $spacing-03;
+}
+
+.cache-check {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: $spacing-03;
+  padding: $spacing-03 0;
+  border-top: 1px solid $border-subtle-01;
+}
+
+.cache-check > span {
+  color: $support-error;
+  font-weight: 600;
+}
+
+.cache-check--pass > span {
+  color: $support-success;
+}
+
+.cache-check--warning > span {
+  color: $support-warning;
+}
+
+.cache-check strong,
+.cache-check small {
+  display: block;
+}
+
+.cache-check strong {
+  @include type-style('body-compact-01');
+}
+
+.cache-check small {
+  @include type-style('label-01');
+  color: $text-secondary;
+  margin-top: $spacing-02;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-05;
+  margin-bottom: $spacing-05;
+}
+
+.form-grid--storage {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: $spacing-05;
+}
+
+.config-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-04;
+  margin: $spacing-06 0;
+}
+
+.result-heading {
+  padding-bottom: $spacing-05;
+  border-bottom: 1px solid $border-subtle-01;
+}
+
+.result-heading strong,
+.result-heading span {
+  display: block;
+}
+
+.result-heading span {
+  @include type-style('label-01');
+  color: $text-secondary;
+  margin-top: $spacing-02;
+}
+
+.result-metrics,
+.storage-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: $spacing-05;
+  background: $border-subtle-01;
+}
+
+.result-metric {
+  padding: $spacing-04;
+  background: $layer-02;
+}
+
+.result-metric span,
+.result-metric strong {
+  display: block;
+}
+
+.result-metric span {
+  @include type-style('label-01');
+  color: $text-secondary;
+  text-transform: capitalize;
+}
+
+.result-metric strong {
+  @include type-style('heading-03');
+  margin-top: $spacing-03;
+}
+
+.result-warning {
+  @include type-style('body-compact-01');
+  color: $support-warning;
+  margin: $spacing-05 0 0;
+}
+
+.storage-panel {
+  margin-bottom: $spacing-05;
+}
+
+.storage-panel__intro p {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  max-width: 48rem;
+  margin: 0;
+}
+
+.storage-results {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.compare-sets,
+.compare-board {
+  margin-bottom: $spacing-05;
+}
+
+.compare-sets__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: $spacing-04;
+  margin-top: $spacing-05;
+}
+
+.compare-set {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: $spacing-03;
+  min-height: 10.5rem;
+  padding: $spacing-05;
+  color: $text-primary;
+  background: $layer-02;
+  border: 1px solid $border-subtle-01;
+  text-align: left;
+  cursor: pointer;
+}
+
+.compare-set:hover {
+  background: $layer-hover-01;
+}
+
+.compare-set--selected {
+  border-color: ddn.$ddn-steel-blue;
+  box-shadow: inset 0 -3px 0 ddn.$ddn-steel-blue;
+}
+
+.compare-set__arms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-03;
+}
+
+.compare-set strong {
+  @include type-style('heading-compact-02');
+}
+
+.compare-set span {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.compare-set__delta {
+  @include type-style('heading-compact-01');
+  color: ddn.$ddn-light-blue !important;
+  margin-top: auto;
+}
+
+.compare-board__intro p {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  max-width: 48rem;
+  margin: $spacing-03 0 $spacing-05;
+}
+
+.compare-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: $spacing-05;
+  margin-bottom: $spacing-06;
+}
+
+.compare-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-03;
+  padding: $spacing-05;
+  background: $layer-02;
+  border: 1px solid $border-subtle-01;
+}
+
+.compare-kpi > strong {
+  @include type-style('heading-05');
+  margin-top: $spacing-03;
+}
+
+.compare-kpi > span {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.compare-kpi dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $spacing-04 $spacing-05;
+  margin: $spacing-04 0 0;
+}
+
+.compare-kpi dt {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.compare-kpi dd {
+  @include type-style('heading-compact-01');
+  margin: $spacing-02 0 0;
+}
+
+.compare-kpi small {
+  @include type-style('label-01');
+  color: $text-secondary;
+  margin-top: auto;
+  overflow-wrap: anywhere;
+}
+
+.compare-table-wrap {
+  overflow-x: auto;
+  border: 1px solid $border-subtle-01;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: $layer-02;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: $spacing-04 $spacing-05;
+  text-align: left;
+  border-bottom: 1px solid $border-subtle-01;
+  white-space: nowrap;
+}
+
+.compare-table th {
+  @include type-style('label-01');
+  color: $text-secondary;
+  background: $layer-01;
+  font-weight: 500;
+}
+
+.compare-table td {
+  @include type-style('body-compact-01');
+}
+
+.compare-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.observe-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $spacing-04;
+  margin-bottom: $spacing-05;
+}
+
+.observe-meta span {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.stack-layers__row {
+  cursor: pointer;
+}
+
+.stack-layers__detail {
+  margin-top: $spacing-05;
+  padding: $spacing-05;
+  background: $layer-02;
+  border: 1px solid $border-subtle-01;
+}
+
+.stack-layers__detail p,
+.stack-layers__detail dt {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.stack-layers__detail dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: $spacing-04;
+  margin: $spacing-04 0 0;
+}
+
+.stack-layers__detail dd {
+  @include type-style('heading-compact-01');
+  margin: $spacing-02 0 0;
+}
+
+.observe-board {
+  margin-bottom: $spacing-05;
+}
+
+.observe-board__intro {
+  display: flex;
+  justify-content: space-between;
+  gap: $spacing-05;
+  align-items: flex-start;
+  margin-bottom: $spacing-05;
+}
+
+.observe-board__intro p,
+.observe-board__hint {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  max-width: 48rem;
+  margin: $spacing-03 0 $spacing-05;
+}
+
+.observe-series {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: $spacing-03 $spacing-05;
+  margin-bottom: $spacing-05;
+}
+
+.observe-charts {
+  display: grid;
+  gap: $spacing-04;
+}
+
+.observe-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
+
+.observe-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-03;
+}
+
+.observe-event {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: $spacing-02;
+  min-width: 7.5rem;
+  padding: $spacing-04;
+  color: $text-primary;
+  background: $layer-02;
+  border: 1px solid $border-subtle-01;
+  cursor: pointer;
+}
+
+.observe-event:hover {
+  background: $layer-hover-01;
+}
+
+.observe-event--l2 {
+  border-color: ddn.$ddn-brand-red;
+}
+
+.observe-event--l1 {
+  border-color: ddn.$ddn-steel-blue;
+}
+
+.observe-event span {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.observe-event-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-04 $spacing-05;
+}
+
+.observe-event-detail dt {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.observe-event-detail dd {
+  @include type-style('heading-compact-01');
+  margin: $spacing-02 0 0;
+}
+
+.empty-state {
+  @include type-style('body-01');
+  color: $text-secondary;
+}
+
+.trace-panel {
+  margin-bottom: $spacing-05;
+}
+
+.trace-panel__intro {
+  display: flex;
+  justify-content: space-between;
+  gap: $spacing-05;
+  align-items: flex-start;
+  margin-bottom: $spacing-05;
+}
+
+.trace-panel__intro p {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  max-width: 48rem;
+  margin: $spacing-03 0 0;
+}
+
+.trace-list {
+  display: grid;
+  gap: 1px;
+  background: $border-subtle-01;
+  overflow-x: auto;
+}
+
+.trace-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(10rem, 1.3fr) auto repeat(3, minmax(5rem, 0.65fr)) auto auto;
+  gap: $spacing-04;
+  align-items: center;
+  padding: $spacing-04 $spacing-05;
+  background: $layer-02;
+}
+
+.trace-row strong,
+.trace-row span {
+  display: block;
+}
+
+.trace-row span {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+@media (max-width: 66rem) {
+  .workload-picker,
+  .storage-results {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benchmark-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lmcache-guide__heading {
+    flex-direction: column;
+  }
+
+  .lmcache-guide__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cache-switcher__heading,
+  .cache-switcher__body {
+    grid-template-columns: 1fr;
+  }
+
+  .cache-preflight {
+    border-left: 0;
+    border-top: 1px solid $border-subtle-01;
+    padding: $spacing-05 0 0;
+  }
+}
+
+@media (max-width: 42rem) {
+  .section-heading-row,
+  .readiness-banner,
+  .storage-panel__intro {
+    flex-direction: column;
+  }
+
+  .workload-picker,
+  .form-grid,
+  .form-grid--storage,
+  .storage-results,
+  .compare-sets__grid,
+  .compare-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .lmcache-guide__steps {
+    grid-template-columns: 1fr;
+  }
+
+  .lmcache-guide__diagram {
+    height: 24rem;
+  }
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: $spacing-03;
+  margin-bottom: $spacing-05;
+}
+
+.status-tile {
+  background: $layer-01;
+  border: 1px solid $border-subtle-01;
+  border-left-width: 3px;
+  padding: $spacing-03 $spacing-03 $spacing-04;
+  min-height: 4.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: visible;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.status-tile:hover,
+.status-tile:focus-visible {
+  border-color: $border-interactive;
+  outline: none;
+}
+
+.status-tile--selected {
+  border-color: ddn.$ddn-steel-blue;
+  box-shadow: 0 0 0 1px ddn.$ddn-steel-blue;
+}
+
+.status-tile--up {
+  border-left-color: $support-success;
+}
+
+.status-tile--down {
+  border-left-color: $support-error;
+}
+
+.status-tile--unknown {
+  border-left-color: $support-warning;
+}
+
+.status-tile__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-02;
+  margin-bottom: $spacing-02;
+}
+
+.status-tile__label {
+  @include type-style('label-01');
+  color: $text-secondary;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.2;
+  // allow wrap on small tiles
+  overflow-wrap: anywhere;
+}
+
+.status-tile__menu {
+  flex-shrink: 0;
+  margin: -0.35rem -0.35rem 0 0;
+}
+
+// Overflow menu is portaled to body; Carbon defaults max-inline-size ~11.25rem + ellipsis.
+// Grow to the longest action label instead of clipping mid-word.
+.cds--overflow-menu-options.status-tile__menu-options,
+.status-tile__menu-options.cds--overflow-menu-options {
+  width: max-content !important;
+  min-width: max-content !important;
+  max-width: min(32rem, 94vw) !important;
+  inline-size: max-content !important;
+  max-inline-size: min(32rem, 94vw) !important;
+}
+
+.status-tile__menu-options .cds--overflow-menu-options__option {
+  width: 100%;
+  max-width: none;
+  max-inline-size: none;
+}
+
+.status-tile__menu-options .cds--overflow-menu-options__btn {
+  width: 100%;
+  max-width: none !important;
+  max-inline-size: none !important;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  justify-content: flex-start;
+  padding-inline-end: $spacing-06;
+}
+
+.status-tile__menu-options .cds--overflow-menu-options__option-content {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+  max-width: none !important;
+  max-inline-size: none !important;
+}
+
+.status-tile__value {
+  @include type-style('heading-compact-01');
+  font-size: 1.125rem;
+  line-height: 1.25;
+}
+
+.status-tile__meta {
+  @include type-style('helper-text-01');
+  color: $text-secondary;
+  margin-top: $spacing-02;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+}
+
+.status-tile__meta--down {
+  color: $support-error;
+}
+
+.status-detail {
+  margin-bottom: $spacing-06;
+}
+
+.status-detail__remediate {
+  @include type-style('body-01');
+  color: $text-secondary;
+  margin: 0 0 $spacing-05;
+  max-width: 52rem;
+}
+
+.status-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-03;
+  margin-bottom: $spacing-05;
+}
+
+.status-detail__query {
+  @include type-style('code-01');
+  color: $text-secondary;
+  margin: 0;
+  word-break: break-all;
+}
+
+.link-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: $spacing-05;
+}
+
+.link-card {
+  background: $layer-01;
+  border: 1px solid $border-subtle-01;
+  padding: $spacing-05;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-04;
+  min-height: 10rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.link-card:hover {
+  border-color: $border-interactive;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.link-card__category {
+  @include type-style('label-01');
+  color: $text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.32px;
+}
+
+.link-card__title {
+  @include type-style('heading-compact-02');
+  margin: 0;
+}
+
+.link-card__desc {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  flex: 1;
+}
+
+.link-card__url {
+  @include type-style('code-01');
+  color: $link-primary;
+  word-break: break-all;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: $spacing-05;
+  margin-top: $spacing-05;
+}
+
+.panel {
+  background: $layer-01;
+  border: 1px solid $border-subtle-01;
+  padding: $spacing-05;
+}
+
+.panel__title {
+  @include type-style('heading-compact-01');
+  margin-bottom: $spacing-05;
+}
+
+.panel-steps__lead {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  margin: 0 0 $spacing-05;
+  max-width: 40rem;
+}
+
+// Structured checklist (avoids Carbon list-reset / broken wrap)
+.panel-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-04;
+}
+
+.creds-table-wrap {
+  overflow-x: auto;
+}
+
+.creds-table {
+  width: 100%;
+  border-collapse: collapse;
+  @include type-style('body-compact-01');
+
+  th,
+  td {
+    border: 1px solid $border-subtle-01;
+    padding: $spacing-03 $spacing-04;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: $layer-02;
+    @include type-style('label-01');
+    color: $text-secondary;
+  }
+
+  code {
+    @include type-style('code-01');
+    background: $layer-02;
+    padding: 0.05rem 0.3rem;
+  }
+
+  a {
+    color: $link-primary;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.creds-table__notes {
+  color: $text-secondary;
+  max-width: 18rem;
+}
+
+.creds-bullets {
+  margin: 0;
+  padding-left: $spacing-06;
+  @include type-style('body-compact-01');
+  line-height: 1.7;
+  color: $text-secondary;
+
+  strong {
+    color: $text-primary;
+  }
+
+  code {
+    @include type-style('code-01');
+    background: $layer-02;
+    padding: 0.05rem 0.3rem;
+    color: $text-primary;
+  }
+}
+
+.panel-steps__item {
+  display: flex;
+  gap: $spacing-04;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+}
+
+.panel-steps__num {
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: $layer-02;
+  border: 1px solid $border-subtle-01;
+  @include type-style('label-01');
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: $text-secondary;
+  margin-top: 0.1rem;
+}
+
+.panel-steps__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.panel-steps__label {
+  @include type-style('body-compact-01');
+  font-weight: 600;
+  color: $text-primary;
+  margin-bottom: $spacing-01;
+}
+
+.panel-steps__detail {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+
+  code {
+    @include type-style('code-01');
+    background: $layer-02;
+    padding: 0.05rem 0.3rem;
+    color: $text-primary;
+  }
+}
+
+.panel-steps__em {
+  color: $text-primary;
+  font-weight: 600;
+}
+
+.panel-steps__hint {
+  color: $text-secondary;
+}
+
+// Key / value credentials list
+.panel-kv {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-04;
+}
+
+.panel-kv__row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: $spacing-03;
+  align-items: baseline;
+
+  dt {
+    @include type-style('label-01');
+    color: $text-secondary;
+    margin: 0;
+  }
+
+  dd {
+    @include type-style('body-compact-01');
+    margin: 0;
+    color: $text-primary;
+    min-width: 0;
+    overflow-wrap: anywhere;
+
+    code {
+      @include type-style('code-01');
+      background: $layer-02;
+      padding: 0.05rem 0.3rem;
+    }
+  }
+}
+
+.panel-kv__sep {
+  margin: 0 $spacing-02;
+  color: $text-secondary;
+}
+
+.panel-kv__hint {
+  color: $text-secondary;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-04;
+  align-items: center;
+  margin-bottom: $spacing-06;
+}
+
+.footer-note {
+  @include type-style('helper-text-01');
+  color: $text-secondary;
+  margin-top: $spacing-07;
+}
+
+// ── Documentation (markdown viewer) ─────────────────────
+.docs-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) 1fr;
+  gap: $spacing-05;
+  align-items: start;
+  min-height: calc(100vh - 12rem);
+
+  @media (max-width: 42rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.docs-nav {
+  position: sticky;
+  top: 4rem;
+  max-height: calc(100vh - 6rem);
+  overflow: auto;
+}
+
+.docs-nav .cds--search {
+  margin-bottom: $spacing-05;
+}
+
+.docs-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-04;
+}
+
+.docs-nav__group-label {
+  @include type-style('label-01');
+  color: $text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.32px;
+  margin-bottom: $spacing-02;
+}
+
+.docs-nav__item {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-03;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: $text-primary;
+  padding: $spacing-03;
+  cursor: pointer;
+  border-radius: 0;
+
+  &:hover {
+    background: $layer-hover-01;
+  }
+}
+
+.docs-nav__item--active {
+  border-color: $border-interactive;
+  background: $layer-selected-01;
+}
+
+.docs-nav__item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+.docs-nav__item-title {
+  @include type-style('body-compact-01');
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-nav__item-path {
+  @include type-style('helper-text-01');
+  color: $text-secondary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-nav__empty {
+  @include type-style('body-compact-01');
+  color: $text-secondary;
+}
+
+.docs-body {
+  min-height: 24rem;
+}
+
+.docs-body__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $spacing-05;
+  margin-bottom: $spacing-05;
+  padding-bottom: $spacing-04;
+  border-bottom: 1px solid $border-subtle-01;
+}
+
+.docs-body__path {
+  @include type-style('code-01');
+  color: $text-secondary;
+  display: block;
+  margin-top: $spacing-02;
+}
+
+.docs-md {
+  @include type-style('body-01');
+  color: $text-primary;
+  line-height: 1.6;
+  max-width: 52rem;
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: $text-primary;
+    margin-top: $spacing-07;
+    margin-bottom: $spacing-04;
+    line-height: 1.3;
+  }
+
+  h1 {
+    @include type-style('heading-04');
+    margin-top: 0;
+  }
+
+  h2 {
+    @include type-style('heading-03');
+    padding-bottom: $spacing-02;
+    border-bottom: 1px solid $border-subtle-01;
+  }
+
+  h3 {
+    @include type-style('heading-02');
+  }
+
+  p,
+  ul,
+  ol {
+    margin: 0 0 $spacing-05;
+  }
+
+  ul,
+  ol {
+    padding-left: $spacing-06;
+  }
+
+  li + li {
+    margin-top: $spacing-02;
+  }
+
+  a {
+    color: $link-primary;
+  }
+
+  code {
+    @include type-style('code-01');
+    background: $layer-02;
+    padding: 0.1rem 0.35rem;
+  }
+
+  pre {
+    background: $layer-02;
+    border: 1px solid $border-subtle-01;
+    padding: $spacing-05;
+    overflow-x: auto;
+    margin: 0 0 $spacing-05;
+
+    code {
+      background: transparent;
+      padding: 0;
+      white-space: pre;
+    }
+  }
+
+  blockquote {
+    margin: 0 0 $spacing-05;
+    padding: $spacing-03 $spacing-05;
+    border-left: 3px solid $border-interactive;
+    color: $text-secondary;
+    background: $layer-02;
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid $border-subtle-01;
+    margin: $spacing-07 0;
+  }
+
+  .docs-md__table-wrap {
+    overflow-x: auto;
+    margin-bottom: $spacing-05;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    @include type-style('body-compact-01');
+  }
+
+  th,
+  td {
+    border: 1px solid $border-subtle-01;
+    padding: $spacing-03 $spacing-04;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: $layer-02;
+    font-weight: 600;
+  }
+
+  tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .docs-md__img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid $border-subtle-01;
+    margin: $spacing-04 0;
+    background: $layer-02;
+  }
+
+  .docs-md__placeholder {
+    color: $text-secondary;
+  }
+}
+
+// ── DDN header / brand chrome ───────────────────────────
+.cds--header {
+  background: ddn.$ddn-black !important;
+  border-block-end: 1px solid ddn.$ddn-wine;
+}
+
+.cds--header__name {
+  color: ddn.$ddn-cool-gray !important;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.cds--header__name--prefix {
+  color: ddn.$ddn-brand-red !important;
+  font-weight: 600;
+}
+
+.cds--header__nav {
+  display: block;
+}
+
+.cds--header__menu-item {
+  color: ddn.$ddn-warm-gray !important;
+
+  &:hover {
+    background: ddn.$ddn-warm-black !important;
+    color: ddn.$ddn-cool-gray !important;
+  }
+}
+
+.cds--header__menu-item[aria-current='page'],
+.cds--header__menu-item--current,
+.cds--header__menu-item[aria-current='true'] {
+  background: ddn.$ddn-deep-blue !important;
+  color: ddn.$ddn-cool-gray !important;
+  box-shadow: inset 0 -3px 0 0 ddn.$ddn-steel-blue;
+}
+
+.cds--header__action {
+  fill: ddn.$ddn-warm-gray;
+
+  &:hover {
+    background: ddn.$ddn-warm-black !important;
+    fill: ddn.$ddn-cool-gray;
+  }
+}
+
+// Logo mark in header
+.lab-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lab-header__logo {
+  display: block;
+  height: 1.35rem;
+  width: auto;
+  // Primary logo already uses brand reds; keeps mark readable on DDN black
+}
+
+.lab-header__product {
+  @include type-style('body-compact-01');
+  color: ddn.$ddn-cool-gray;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border-inline-start: 1px solid ddn.$ddn-brown;
+  padding-inline-start: 0.75rem;
+  line-height: 1.2;
+}
+
+// Status tiles — DDN accent bars
+.status-tile--up {
+  border-left-color: ddn.$ddn-support-success !important;
+}
+
+.status-tile--down {
+  border-left-color: ddn.$ddn-brand-red !important;
+}
+
+.status-tile--unknown {
+  border-left-color: ddn.$ddn-terra !important;
+}
+
+.status-tile--selected {
+  // Selection is informational, not a health failure. Keep DDN red exclusive
+  // to down/error semantics so an Up tile cannot look failed.
+  border-color: ddn.$ddn-steel-blue !important;
+  box-shadow: 0 0 0 1px ddn.$ddn-steel-blue;
+}
+
+.status-tile--selected.status-tile--up {
+  border-left-color: ddn.$ddn-support-success !important;
+}
+
+.status-tile--selected.status-tile--down {
+  border-left-color: ddn.$ddn-brand-red !important;
+}
+
+.status-tile--selected.status-tile--unknown {
+  border-left-color: ddn.$ddn-terra !important;
+}
+
+// Primary interactive affordances
+.panel {
+  border-color: ddn.$ddn-border;
+}
+
+.docs-nav__item--active {
+  border-color: ddn.$ddn-steel-blue !important;
+  background: ddn.$ddn-deep-blue !important;
+}
+
+.docs-md a {
+  color: ddn.$ddn-steel-blue;
+}
+
+.docs-md h2 {
+  border-bottom-color: ddn.$ddn-wine;
+}
+
+.docs-md blockquote {
+  border-left-color: ddn.$ddn-steel-blue;
+  background: ddn.$ddn-deep-blue;
+}
+
+.lab-header__mark {
+  @include type-style('heading-compact-01');
+  color: ddn.$ddn-cool-gray;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+.generate-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) minmax(22rem, 1.3fr);
+  gap: $spacing-05;
+}
+
+.ltx-video {
+  display: block;
+  width: 100%;
+  margin: $spacing-05 0;
+  background: #000;
+}
+
+.ltx-log {
+  @include type-style('code-01');
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: $layer-02;
+  padding: $spacing-04;
+  color: $text-secondary;
+}
+
+@media (max-width: 60rem) {
+  .generate-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+// Tag “Local demo only” etc. pick up token overrides automatically

@@ -2,29 +2,32 @@ receivers:
   otlp:
     protocols:
       grpc:
+        endpoint: 0.0.0.0:4317
       http:
+        endpoint: 0.0.0.0:4318
   prometheus:
     config:
       scrape_configs:
-        - job_name: 'ltx-inference'
+        - job_name: ltx-inference
           static_configs:
-            - targets: ['host.docker.internal:8001']
+            - targets: ["host.docker.internal:8001"]
 
 processors:
   batch:
 
 exporters:
   prometheus:
-    endpoint: "0.0.0.0:8888"
+    endpoint: 0.0.0.0:8889
     namespace: ltx
   loki:
     endpoint: http://loki:3100/loki/api/v1/push
-    labels:
-      - job
-      - run_id
   debug:
+    verbosity: basic
 
 service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8887
   pipelines:
     metrics:
       receivers: [otlp, prometheus]

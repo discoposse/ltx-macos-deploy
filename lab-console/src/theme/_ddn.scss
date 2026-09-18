@@ -1,0 +1,173 @@
+// DDN brand tokens — source: https://www.ddn.com/company/brand-assets/
+// Applied as Carbon g100 CSS custom-property overrides + app chrome.
+
+// Brand palette
+$ddn-brand-red: #ed2738;
+$ddn-deep-red: #cb343b;
+$ddn-wine: #7d2d3f;
+$ddn-terra: #d98878;
+$ddn-black: #201e1e;
+$ddn-warm-black: #402022;
+$ddn-brown: #77494d;
+$ddn-warm-gray: #d8d2cb;
+$ddn-deep-blue: #374967;
+$ddn-steel-blue: #7594b2;
+$ddn-light-blue: #bdd6e7;
+$ddn-cool-gray: #f0f0f0;
+
+// Derived UI surfaces (dark lab console)
+$ddn-page-bg: $ddn-black;
+$ddn-layer-01: #2a2526; // warm lift from black
+$ddn-layer-02: #352c2e;
+$ddn-layer-03: #403638;
+$ddn-border: #4a3c3e;
+$ddn-border-strong: $ddn-brown;
+$ddn-text: $ddn-cool-gray;
+$ddn-text-secondary: #b8aea6; // warm gray mid
+$ddn-text-placeholder: #8a7f7a;
+$ddn-link: $ddn-steel-blue;
+$ddn-link-hover: $ddn-light-blue;
+$ddn-interactive: $ddn-steel-blue;
+$ddn-focus: $ddn-steel-blue;
+$ddn-support-error: $ddn-brand-red;
+$ddn-support-success: #3d9b6a;
+$ddn-support-warning: $ddn-terra;
+$ddn-support-info: $ddn-steel-blue;
+
+// Map DDN palette onto Carbon theme tokens (g100 + layer-one)
+@mixin ddn-carbon-tokens {
+  // Core
+  --cds-background: #{$ddn-page-bg};
+  --cds-background-hover: #{$ddn-warm-black};
+  --cds-background-active: #{$ddn-deep-blue};
+  --cds-background-selected: #{$ddn-deep-blue};
+  --cds-background-selected-hover: #{$ddn-steel-blue};
+  --cds-background-inverse: #{$ddn-cool-gray};
+  --cds-background-brand: #{$ddn-deep-blue};
+
+  // Layers
+  --cds-layer: #{$ddn-layer-01};
+  --cds-layer-01: #{$ddn-layer-01};
+  --cds-layer-02: #{$ddn-layer-02};
+  --cds-layer-03: #{$ddn-layer-03};
+  --cds-layer-hover: #{$ddn-layer-02};
+  --cds-layer-hover-01: #{$ddn-layer-02};
+  --cds-layer-active: #{$ddn-layer-03};
+  --cds-layer-selected: #{$ddn-deep-blue};
+  --cds-layer-selected-01: #{$ddn-deep-blue};
+  --cds-layer-selected-hover: #{$ddn-steel-blue};
+  --cds-layer-selected-inverse: #{$ddn-cool-gray};
+  --cds-layer-accent: #{$ddn-deep-blue};
+  --cds-layer-accent-01: #{$ddn-deep-blue};
+  --cds-layer-background: #{$ddn-page-bg};
+  --cds-layer-background-01: #{$ddn-page-bg};
+
+  // Field
+  --cds-field: #{$ddn-layer-01};
+  --cds-field-01: #{$ddn-layer-01};
+  --cds-field-02: #{$ddn-layer-02};
+  --cds-field-hover: #{$ddn-layer-02};
+
+  // Text
+  --cds-text-primary: #{$ddn-text};
+  --cds-text-secondary: #{$ddn-text-secondary};
+  --cds-text-placeholder: #{$ddn-text-placeholder};
+  --cds-text-helper: #{$ddn-text-secondary};
+  --cds-text-error: #{$ddn-terra};
+  --cds-text-inverse: #{$ddn-black};
+  --cds-text-on-color: #{$ddn-cool-gray};
+  --cds-text-on-color-disabled: rgba(240, 240, 240, 0.35);
+
+  // Link
+  --cds-link-primary: #{$ddn-link};
+  --cds-link-primary-hover: #{$ddn-link-hover};
+  --cds-link-secondary: #{$ddn-light-blue};
+  --cds-link-inverse: #{$ddn-deep-blue};
+  --cds-link-visited: #{$ddn-steel-blue};
+
+  // Interactive / focus
+  --cds-interactive: #{$ddn-interactive};
+  --cds-focus: #{$ddn-focus};
+  --cds-focus-inset: #{$ddn-page-bg};
+  --cds-focus-inverse: #{$ddn-light-blue};
+  --cds-highlight: #{$ddn-steel-blue};
+
+  // Border
+  --cds-border-subtle: #{$ddn-border};
+  --cds-border-subtle-00: #{$ddn-border};
+  --cds-border-subtle-01: #{$ddn-border};
+  --cds-border-subtle-02: #{$ddn-border-strong};
+  --cds-border-subtle-selected: #{$ddn-steel-blue};
+  --cds-border-strong: #{$ddn-border-strong};
+  --cds-border-strong-01: #{$ddn-border-strong};
+  --cds-border-inverse: #{$ddn-warm-gray};
+  --cds-border-interactive: #{$ddn-steel-blue};
+  --cds-border-disabled: #{$ddn-brown};
+  --cds-border-tile: #{$ddn-border};
+
+  // Button
+  --cds-button-primary: #{$ddn-deep-blue};
+  --cds-button-primary-hover: #{$ddn-steel-blue};
+  --cds-button-primary-active: #{$ddn-deep-blue};
+  --cds-button-secondary: #{$ddn-deep-blue};
+  --cds-button-secondary-hover: #{$ddn-steel-blue};
+  --cds-button-secondary-active: #{$ddn-deep-blue};
+  --cds-button-tertiary: #{$ddn-steel-blue};
+  --cds-button-tertiary-hover: #{$ddn-light-blue};
+  --cds-button-danger-primary: #{$ddn-brand-red};
+  --cds-button-danger-secondary: #{$ddn-deep-red};
+  --cds-button-danger-hover: #{$ddn-deep-red};
+  --cds-button-danger-active: #{$ddn-wine};
+  --cds-button-separator: #{$ddn-border};
+  --cds-button-disabled: #{$ddn-layer-03};
+
+  // Support
+  --cds-support-error: #{$ddn-support-error};
+  --cds-support-success: #{$ddn-support-success};
+  --cds-support-warning: #{$ddn-support-warning};
+  --cds-support-info: #{$ddn-support-info};
+  --cds-support-error-inverse: #{$ddn-terra};
+  --cds-support-success-inverse: #{$ddn-support-success};
+  --cds-support-warning-inverse: #{$ddn-terra};
+  --cds-support-info-inverse: #{$ddn-deep-blue};
+
+  // Icon
+  --cds-icon-primary: #{$ddn-cool-gray};
+  --cds-icon-secondary: #{$ddn-warm-gray};
+  --cds-icon-on-color: #{$ddn-cool-gray};
+  --cds-icon-interactive: #{$ddn-light-blue};
+  --cds-icon-inverse: #{$ddn-black};
+
+  // Tag / misc
+  --cds-tag-background-red: #{$ddn-wine};
+  --cds-tag-color-red: #{$ddn-cool-gray};
+  --cds-tag-hover-red: #{$ddn-deep-red};
+  --cds-tag-background-blue: #{$ddn-deep-blue};
+  --cds-tag-color-blue: #{$ddn-light-blue};
+  --cds-tag-background-gray: #{$ddn-layer-02};
+  --cds-tag-color-gray: #{$ddn-warm-gray};
+  --cds-tag-background-green: #1f4d35;
+  --cds-tag-color-green: #a7f0ba;
+
+  // Notification / overlay
+  --cds-notification-background-error: #{$ddn-warm-black};
+  --cds-notification-background-success: #1a3328;
+  --cds-notification-background-info: #{$ddn-deep-blue};
+  --cds-notification-background-warning: #{$ddn-warm-black};
+  --cds-overlay: rgba(32, 30, 30, 0.75);
+  --cds-shadow: rgba(0, 0, 0, 0.55);
+
+  // Skeleton
+  --cds-skeleton-background: #{$ddn-layer-01};
+  --cds-skeleton-element: #{$ddn-layer-02};
+}
+
+// Export for other SCSS files
+:root,
+html.cds--g100,
+body.cds--g100,
+.cds--g100,
+.lab-theme,
+.lab-console {
+  @include ddn-carbon-tokens;
+}

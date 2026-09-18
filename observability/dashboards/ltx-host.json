@@ -1,0 +1,34 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Worker memory",
+      "type": "timeseries",
+      "targets": [{ "expr": "ltx_memory_bytes", "legendFormat": "{{type}}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "GPU util (placeholder until powermetrics)",
+      "type": "timeseries",
+      "targets": [{ "expr": "ltx_gpu_utilization_percent", "legendFormat": "gpu", "refId": "A" }]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["ltx", "host"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "LTX host",
+  "uid": "ltx-host",
+  "version": 1
+}

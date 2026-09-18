@@ -50,29 +50,24 @@ hf download Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler \
   ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors \
   --local-dir models/ltx-2.5/loras || echo "LoRA download skipped (approve on HF if needed)."
 
-# 5. Copy our tuned wrapper scripts + lab launcher
-echo "Installing our custom macOS-tuned generation scripts and lab launcher..."
-cp ../generate_macos.sh .
-cp ../dfr_generate_macos.sh .
-cp ../start-lab.sh .
-chmod +x generate_macos.sh dfr_generate_macos.sh start-lab.sh
+# 5. Lab extras in the LTX venv (MLflow + Prometheus client for the worker)
+echo "Installing lab tracing extras into the LTX venv..."
+uv pip install --python .venv/bin/python mlflow prometheus_client
+
+cd ..
+chmod +x labctl start-lab.sh stop-lab.sh generate_macos.sh dfr_generate_macos.sh
 
 echo ""
 echo "=== Setup Complete! ==="
 echo ""
-echo "The full LTX Lab is ready."
+echo "Launch the Carbon lab with:"
+echo "  ./labctl up"
 echo ""
-echo "Launch everything with one command:"
-echo "  ./start-lab.sh"
+echo "Console:     http://127.0.0.1:8188"
+echo "Grafana:     http://127.0.0.1:3300"
+echo "Prometheus:  http://127.0.0.1:9190"
+echo "MLflow:      http://127.0.0.1:5001"
 echo ""
-echo "This starts:"
-echo "  • Streamlit Web UI (http://localhost:8501) — all instructions, generation, traces, and dashboards"
-echo "  • MLflow UI (http://localhost:5000) — full nested inference traces"
-echo "  • Observability stack (Grafana + Prometheus)"
+echo "CLI still works for a smoke proof:"
+echo "  ./labctl generate --smoke --wait \"your prompt\""
 echo ""
-echo "All previous documentation has been moved into the UI. The web interface is now the single source of truth."
-echo ""
-echo "You can still use the CLI wrappers directly if preferred:"
-echo "  cd LTX-2 && ./generate_macos.sh \"your prompt\""
-echo ""
-echo "Happy generating! The lab is designed to feel like a complete creative studio."

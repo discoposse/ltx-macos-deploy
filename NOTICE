@@ -1,0 +1,47 @@
+LTX Lab
+Copyright 2026 Eric Wright
+
+This repository's original source is licensed under the MIT License (LICENSE).
+
+Third-party components are licensed separately. Running this lab downloads and
+executes software that is not covered by MIT. See docs/LICENSES.md.
+
+-------------------------------------------------------------------------------
+Carbon Design System (IBM)
+https://github.com/carbon-design-system/carbon
+Licensed under the Apache License, Version 2.0
+Consumed via npm packages @carbon/react and @carbon/icons-react.
+
+-------------------------------------------------------------------------------
+LTX-2.x (Lightricks Ltd.)
+https://github.com/Lightricks/LTX-2
+https://huggingface.co/Lightricks/LTX-2.5
+
+Not vendored in this git repository. `./setup-ltx-macos.sh` clones LTX-2 and
+downloads LTX-2.5 distilled weights. Those materials are licensed under the
+LTX-2.x Community License Agreement (11 August 2026). A copy is in
+third_party/LTX-2.x-Community-License.txt.
+
+By downloading or running LTX-2.5 you agree to that agreement and the
+Lightricks Acceptable Use Policy:
+https://static.lightricks.com/legal/ltx-acceptable-use-policy.pdf
+
+Entities with annual revenues of at least USD 10,000,000 must obtain a paid
+commercial license from Lightricks for any use that is not a Non-Commercial
+Purpose as defined in that agreement (ltxv-licensing@lightricks.com).
+
+-------------------------------------------------------------------------------
+Observability images (started by docker compose project ltx-obs)
+
+- Grafana: GNU Affero General Public License v3.0
+- Loki / Promtail: GNU Affero General Public License v3.0
+- Prometheus: Apache License 2.0
+- OpenTelemetry Collector: Apache License 2.0
+
+This repo ships configuration only. It does not modify those images.
+
+-------------------------------------------------------------------------------
+MLflow
+https://github.com/mlflow/mlflow
+Apache License 2.0
+Installed into the LTX Python environment by setup-ltx-macos.sh.

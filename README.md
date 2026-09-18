@@ -1,39 +1,55 @@
 # LTX Lab
 
-A complete macOS frontend and observability lab for LTX-2 video generation.
+Local video generation with LTX-2 distilled, a Carbon console, a run ledger, MLflow traces, and a dedicated Grafana/Prometheus/Loki stack.
 
-**Everything is now controlled from the UI.** All instructions, prompt tips, parameter guidance, MLflow tracing, and observability controls live inside the web interface.
-
-## Quick Start
+This repository is the **lab kit**. It does not contain LTX-2 source or model weights.
 
 ```bash
-# 1. Clone and run setup (installs everything, including the webui)
-git clone https://github.com/discoposse/ltx-macos-deploy.git
-cd ltx-macos-deploy
 ./setup-ltx-macos.sh
-
-# 2. Start the full lab (MLflow UI + Gradio frontend + observability stack)
-./start-lab.sh
+./labctl up
+open http://127.0.0.1:8188
 ```
 
-The UI will open automatically. Use the tabs to navigate between **Generate** (live console), **Traces** (MLflow), **Observability**, **Library**, and **Info**.
+Tester walkthrough: [docs/TESTING.md](docs/TESTING.md). Licenses: [LICENSE](LICENSE), [NOTICE](NOTICE), [docs/LICENSES.md](docs/LICENSES.md).
 
-To stop everything cleanly:
+## Generate
+
+On **Generate**, run one clip at a time. Defaults are a short proof (256×384, 9 frames, disk offload) so the first video can finish on a loaded Mac. **Observe** follows prompt → stages → mp4. **Pin as reference** copies the clip into `references/`.
+
 ```bash
-./stop-lab.sh
+./labctl status
+./labctl generate --smoke --wait "a red hatchback on a coastal runway"
+./labctl pin <run-id> --label first-clip
+./labctl url grafana
 ```
 
-All previous CLI scripts (`generate_macos.sh`, `dfr_generate_macos.sh`) still work, but the web interface is now the recommended way to work.
+## Ports
 
-## Project Structure (clean & minimal)
+| Surface | Port |
+|---|---|
+| Carbon console | 8188 |
+| Lab API | 8199 |
+| Grafana | 3300 |
+| Prometheus | 9190 |
+| Loki | 3200 |
+| MLflow | 5001 |
+| Worker metrics | 8001 |
 
-- `start-lab.sh` — Single entry point that launches MLflow, Gradio, and the observability containers
-- `webui/` — All frontend code and instructions (no more scattered READMEs)
-- `setup-ltx-macos.sh` — One-time environment and model setup
-- `prompts/` — Your personal prompt library (personal files are gitignored)
-- `observability/` — Supporting stack (Prometheus, Grafana, Loki) — managed by the launcher
-- `LTX-2/` — Official codebase (pulled and updated by setup)
+The lab will not bind a port that is already taken and will not `docker compose down` a foreign project. `./labctl down` stops only this lab.
 
-All redundant launch files and duplicated documentation have been consolidated. The web UI is now the single source of truth for how to use the lab.
+## Engines
 
-Happy generating — everything you need is inside the interface.
+Iteration 1 generates video with **LTX-2 distilled**. DFR is listed but blocked until the gated IC-LoRA is present. vLLM, SGLang, and oMLX are detected when those servers are already running; they are not generation backends yet.
+
+## Layout
+
+- `lab/` — occupancy, run ledger, worker, HTTP API
+- `lab-console/` — Carbon SPA
+- `observability/` — compose project `ltx-obs`
+- `LTX-2/` — vendor clone + weights (gitignored)
+- `runs/` — per-run mp4, log, status (gitignored)
+- `references/` — pinned proofs (gitignored)
+
+## License
+
+Original source in this repository is **MIT**. Running the lab downloads LTX-2.5 under the **LTX-2.x Community License** (Lightricks). Organizations at or above the revenue threshold in that license may need a paid commercial grant. Details in [docs/LICENSES.md](docs/LICENSES.md).

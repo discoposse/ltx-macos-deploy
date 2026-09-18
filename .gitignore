@@ -24,9 +24,18 @@ __pycache__/
 
 # Generated outputs
 outputs/
+runs/
+references/
 *.mp4
 *.mov
 *.avi
+
+# Lab lease / pids
+.lab/
+
+# Console
+lab-console/node_modules/
+lab-console/dist/
 
 # OS files
 .DS_Store
@@ -39,6 +48,9 @@ Thumbs.db
 # MLflow local database and run storage (machine-specific, do not commit)
 mlflow.db
 mlruns/
+
+# Observer manifests written during local runs
+observability/runs/
 
 # Temporary setup files
 setup-ltx-macos.sh.bak

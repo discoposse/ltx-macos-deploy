@@ -4,12 +4,17 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
+    uid: prometheus
     url: http://prometheus:9090
     isDefault: true
-    editable: true
+    editable: false
+    jsonData:
+      timeInterval: 5s
+      httpMethod: POST
 
   - name: Loki
     type: loki
     access: proxy
+    uid: loki
     url: http://loki:3100
-    editable: true
+    editable: false

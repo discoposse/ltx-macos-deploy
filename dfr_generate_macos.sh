@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV=".venv"
-HF_BIN="/Users/discoposse/.local/bin/hf"
+HF_BIN="${HF_BIN:-$(command -v hf || true)}"
 PROMPT="${1:-A serene Japanese garden at dawn with koi fish swimming in a pond, gentle mist, cinematic lighting, shallow depth of field}"
 OUTPUT="${2:-output_dfr_m1.mp4}"
 

@@ -80,14 +80,8 @@ class LTXObserver:
         memory_gauge.labels(type="rss").set(psutil.Process().memory_info().rss)
         memory_gauge.labels(type="unified").set(mem.used)  # approximation on macOS
 
-        # GPU (MPS) - very limited visibility, log what we can
-        try:
-            # On Apple Silicon we can use `top` or `powermetrics` in background for real GPU metrics
-            gpu_util_gauge.set(0)  # placeholder - extend with powermetrics parsing if needed
-        except:
-            pass
-
-        kv_offload_counter.labels().inc(0)  # placeholder for KV offload detection
+        # GPU (MPS) — limited visibility on Apple Silicon without powermetrics
+        gpu_util_gauge.set(0)
 
         snapshot = {
             "cpu_percent": psutil.cpu_percent(),
@@ -114,7 +108,7 @@ class LTXObserver:
         logger.info(f"END run_id={self.run_id} video={output_video} duration={self.manifest.metrics['total_duration']:.1f}s status={self.manifest.status}")
         print(f"\n📊 Run manifest saved to: observability/runs/{self.run_id}/manifest.json")
         print(f"🎥 Video: {output_video}")
-        print(f"View in Grafana: http://localhost:3000 (run_id filter = {self.run_id})")
+        print(f"View in Grafana: http://127.0.0.1:3300 (run_id filter = {self.run_id})")
 
 # Global observer instance
 observer = LTXObserver()
