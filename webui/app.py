@@ -22,9 +22,21 @@ def generate_video(prompt, mode):
     output_file = f"output_{int(time.time())}.mp4"
     
     try:
+        # Run from project root so relative paths work
+        script_path = f"./LTX-2/{script}"
+        if not os.path.exists(script_path):
+            # Fallback - copy from root if missing inside LTX-2
+            root_script = f"./{script}"
+            if os.path.exists(root_script):
+                import shutil
+                shutil.copy2(root_script, script_path)
+                print(f"Copied {script} into LTX-2/ directory")
+            else:
+                raise FileNotFoundError(f"Script not found: {script_path} or in root. Run setup-ltx-macos.sh again.")
+        
         process = subprocess.Popen(
-            [f"./{script}", prompt, output_file],
-            cwd="LTX-2",
+            [script_path, prompt, output_file],
+            cwd=".",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -45,7 +57,7 @@ def generate_video(prompt, mode):
             current_video = output_path
             yield current_output, output_path
         else:
-            current_output += f"\n❌ Generation failed with code {process.returncode}\n"
+            current_output += f"\n❌ Generation failed with code {process.returncode} or no output file found\n"
             yield current_output, None
             
     except Exception as e:
@@ -60,7 +72,7 @@ def clear_output():
     current_video = None
     return "", None
 
-with gr.Blocks(title="LTX Lab", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="LTX Lab") as demo:
     gr.Markdown("# LTX Lab\n**macOS Video Generation Studio with Live Console**")
     
     with gr.Tabs():
@@ -90,23 +102,21 @@ with gr.Blocks(title="LTX Lab", theme=gr.themes.Soft()) as demo:
                         label="",
                         lines=20,
                         max_lines=30,
-                        show_copy_button=True,
                         value="Click Generate to start. Output will stream here in real-time (like the infinia-mac-lab console).",
-                        elem_classes=["console"]
                     )
                     output_video = gr.Video(label="Generated Video", visible=True)
         
         with gr.Tab("Traces"):
             gr.Markdown("### MLflow Traces")
             gr.Markdown("Full nested inference traces (text encoder → transformer stages → VAE → upsampler) are available in MLflow.")
-            gr.Link("Open MLflow UI →", "http://localhost:5001", size="lg")
+            gr.HTML('<a href="http://localhost:5001" target="_blank" style="font-size: 1.2em; font-weight: bold;">Open MLflow UI →</a>')
             gr.Markdown("All generations are automatically wrapped in MLflow runs.")
         
         with gr.Tab("Observability"):
             gr.Markdown("### Live Dashboards")
             with gr.Row():
-                gr.Link("Grafana Dashboard", "http://localhost:3000", size="lg")
-                gr.Link("Prometheus Metrics", "http://localhost:9090", size="lg")
+                gr.HTML('<a href="http://localhost:3000" target="_blank" style="font-size: 1.2em;">Grafana Dashboard</a>')
+                gr.HTML('<a href="http://localhost:9090" target="_blank" style="font-size: 1.2em;">Prometheus Metrics</a>')
             gr.Markdown("The LTXObserver pushes metrics and logs to these dashboards.")
         
         with gr.Tab("Library"):
