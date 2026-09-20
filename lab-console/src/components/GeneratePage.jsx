@@ -33,9 +33,20 @@ export default function GeneratePage({ onOpenObserve }) {
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
   const [omlx, setOmlx] = useState(null);
+  const [omlxModel, setOmlxModel] = useState(null);
   const [rewriteBusy, setRewriteBusy] = useState(false);
   const [rewriteInfo, setRewriteInfo] = useState(null);
   const runIdRef = useRef(null);
+
+  const omlxModels = (omlx?.catalog?.length ? omlx.catalog : (omlx?.models || []).map((id) => ({ id }))).map((item) => {
+    const flags = [item.loaded ? 'loaded' : null, item.is_default ? 'default' : null].filter(Boolean);
+    return {
+      id: item.id,
+      label: flags.length ? `${item.id} (${flags.join(', ')})` : item.id,
+      path: item.path,
+      loaded: item.loaded,
+    };
+  });
 
   const refreshRun = useCallback(async (id) => {
     const next = await fetchRun(id);
@@ -66,7 +77,14 @@ export default function GeneratePage({ onOpenObserve }) {
       setApiError(err.message);
     }
     fetchOmlx()
-      .then(setOmlx)
+      .then((data) => {
+        setOmlx(data);
+        const catalog = data?.catalog?.length ? data.catalog : (data?.models || []).map((id) => ({ id }));
+        setOmlxModel((current) => {
+          if (current && catalog.some((item) => item.id === current.id)) return current;
+          return catalog.find((item) => item.id === data.default_model) || catalog[0] || null;
+        });
+      })
       .catch(() => setOmlx(null));
     try {
       const data = await fetchRuns();
@@ -110,7 +128,7 @@ export default function GeneratePage({ onOpenObserve }) {
     setError(null);
     setRewriteBusy(true);
     try {
-      const result = await rewritePrompt(prompt);
+      const result = await rewritePrompt(prompt, omlxModel?.id);
       setRewriteInfo(result);
       if (result.prompt) setPrompt(result.prompt);
     } catch (err) {
@@ -129,6 +147,15 @@ export default function GeneratePage({ onOpenObserve }) {
         prompt,
         engine: engine.id,
         spec: { height, width, frames, fps: 24, seed, offload: engine?.default_spec?.offload || 'disk' },
+        omlx: {
+          model: rewriteInfo?.model || omlxModel?.id || omlx?.default_model,
+          source_prompt: rewriteInfo?.source_prompt,
+          prompt: rewriteInfo?.prompt,
+          usage: rewriteInfo?.usage,
+          cache_hit: rewriteInfo?.cache_hit,
+          probe: rewriteInfo?.probe,
+          cache: rewriteInfo?.cache || omlx?.cache,
+        },
       });
       setRun(accepted);
       runIdRef.current = accepted.id;
@@ -175,23 +202,43 @@ export default function GeneratePage({ onOpenObserve }) {
           />
           <div className="omlx-assist">
             <div className="omlx-assist__copy">
-              <strong>oMLX rewrite</strong>
+              <strong>oMLX rewrite + cache</strong>
               <p>
-                Optional. Sends this prompt to the local oMLX LLM on :8000 with a fixed system prefix so KV
-                blocks can stay cached. LTX-2 still generates the video.
+                Load the backend model and set SSD/hot cache in the oMLX admin. This lab then rewrites
+                the prompt with that model so KV blocks stay in oMLX cache. LTX-2 still generates the video.
               </p>
               {omlx?.ready ? (
-                <p className="omlx-assist__meta">
-                  {omlx.default_model || 'model ready'} · SSD cache {omlx.cache?.ssd_dir || 'on'}
-                  {omlx.how?.admin && (
-                    <>
-                      {' · '}
-                      <a href={omlx.how.admin} target="_blank" rel="noreferrer">
-                        oMLX admin
-                      </a>
-                    </>
-                  )}
-                </p>
+                <>
+                  <p className="omlx-assist__meta">
+                    {omlx.how?.configure}
+                    {omlx.how?.admin && (
+                      <>
+                        {' '}
+                        <a href={omlx.how.admin} target="_blank" rel="noreferrer">
+                          Open oMLX admin
+                        </a>
+                        {omlx.how.chat && (
+                          <>
+                            {' · '}
+                            <a href={omlx.how.chat} target="_blank" rel="noreferrer">
+                              Chat
+                            </a>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </p>
+                  <p className="omlx-assist__meta">
+                    Models {omlx.cache?.models_dir || '—'}
+                    <br />
+                    SSD cache {omlx.cache?.ssd_dir || '—'}
+                    {omlx.cache?.ssd_max ? ` · max ${omlx.cache.ssd_max}` : ''}
+                    <br />
+                    Hot RAM cap {omlx.cache?.hot_cache_max_size || '0'}
+                    {omlx.cache?.hot_cache_only ? ' · hot only' : ''}
+                    {omlx.cache?.response_state_dir ? ` · state ${omlx.cache.response_state_dir}` : ''}
+                  </p>
+                </>
               ) : (
                 <p className="omlx-assist__meta">
                   {omlx?.error || 'oMLX is not running.'} Start it with <code>omlx start</code> or open oMLX.app,
@@ -206,12 +253,36 @@ export default function GeneratePage({ onOpenObserve }) {
                   )}
                   {rewriteInfo.usage?.ttft_ms != null && <> · TTFT {rewriteInfo.usage.ttft_ms} ms</>}
                   {rewriteInfo.cache_hit ? ' · cache hit' : ' · cold prefix'}
+                  {rewriteInfo.probe && (
+                    <>
+                      {' · probe hot '}
+                      {rewriteInfo.probe.blocks_hot}/{rewriteInfo.probe.total_blocks}
+                      {' · SSD '}
+                      {rewriteInfo.probe.blocks_ssd}
+                      {' · cold '}
+                      {rewriteInfo.probe.blocks_cold}
+                    </>
+                  )}
                 </p>
               )}
             </div>
-            <Button kind="tertiary" size="md" onClick={onRewrite} disabled={rewriteBusy || !omlx?.ready || busy}>
-              {rewriteBusy ? 'Rewriting…' : 'Rewrite with oMLX'}
-            </Button>
+            <div className="omlx-assist__actions">
+              {omlxModels.length > 0 && (
+                <Dropdown
+                  id="omlx-model"
+                  titleText="oMLX model"
+                  label="Select model"
+                  items={omlxModels}
+                  itemToString={(item) => (item ? item.label || item.id : '')}
+                  selectedItem={omlxModels.find((item) => item.id === omlxModel?.id) || omlxModel}
+                  onChange={({ selectedItem }) => setOmlxModel(selectedItem)}
+                  disabled={!omlx?.ready || rewriteBusy || busy}
+                />
+              )}
+              <Button kind="tertiary" size="md" onClick={onRewrite} disabled={rewriteBusy || !omlx?.ready || busy}>
+                {rewriteBusy ? 'Rewriting…' : 'Rewrite with oMLX'}
+              </Button>
+            </div>
           </div>
           <div className="form-grid" style={{ marginTop: '1rem' }}>
             <Dropdown

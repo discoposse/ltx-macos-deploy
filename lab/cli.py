@@ -58,7 +58,10 @@ def cmd_omlx(args: argparse.Namespace) -> int:
 
     cmd = args.omlx_cmd or "status"
     if cmd == "rewrite":
-        print(json.dumps(omlx.rewrite(args.prompt), indent=2))
+        print(json.dumps(omlx.rewrite(args.prompt, model=getattr(args, "model", None)), indent=2))
+        return 0
+    if cmd == "snapshot":
+        print(json.dumps(omlx.snapshot(model=getattr(args, "model", None), prompt=getattr(args, "prompt", None), do_probe=True), indent=2))
         return 0
     if cmd == "clear-cache":
         print(json.dumps(omlx.clear_cache(), indent=2))
@@ -151,6 +154,10 @@ def build_parser() -> argparse.ArgumentParser:
     omlx_sub.add_parser("status")
     rewrite = omlx_sub.add_parser("rewrite")
     rewrite.add_argument("prompt")
+    rewrite.add_argument("--model")
+    snap = omlx_sub.add_parser("snapshot")
+    snap.add_argument("prompt", nargs="?")
+    snap.add_argument("--model")
     omlx_sub.add_parser("clear-cache")
     gen = sub.add_parser("generate")
     gen.add_argument("prompt", nargs="?")

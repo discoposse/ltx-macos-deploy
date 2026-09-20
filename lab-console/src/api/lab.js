@@ -80,6 +80,14 @@ export async function fetchOmlx() {
   return labFetch('/api/omlx');
 }
 
+export async function fetchOmlxSnapshot(prompt, model) {
+  const params = new URLSearchParams();
+  if (prompt) params.set('prompt', prompt);
+  if (model) params.set('model', model);
+  const query = params.toString();
+  return labFetch(`/api/omlx/snapshot${query ? `?${query}` : ''}`);
+}
+
 export async function rewritePrompt(prompt, model) {
   return labFetch('/api/omlx/rewrite', {
     method: 'POST',

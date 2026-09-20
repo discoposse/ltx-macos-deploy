@@ -95,6 +95,16 @@ def make_handler(lab: Lab):
                 except Exception as exc:
                     self._json(500, {"error": str(exc)})
                 return
+            if path == "/api/omlx/snapshot":
+                try:
+                    prompt = (qs.get("prompt") or [None])[0]
+                    model = (qs.get("model") or [None])[0]
+                    self._json(200, lab.omlx_snapshot(prompt=prompt, model=model))
+                except OmlxError as exc:
+                    self._json(503, {"error": str(exc)})
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
             if path == "/api/engines":
                 self._json(200, {"engines": [e.to_dict() for e in lab.engines()]})
                 return
@@ -199,7 +209,8 @@ def make_handler(lab: Lab):
             if path == "/api/generate":
                 try:
                     request = GenerationRequest.from_dict(body)
-                    run = lab.generate(request)
+                    evidence = body.get("omlx") if isinstance(body.get("omlx"), dict) else None
+                    run = lab.generate(request, omlx_evidence=evidence)
                     self._json(202, run.to_dict())
                 except LabBusy as exc:
                     self._json(409, {"error": str(exc)})

@@ -100,6 +100,8 @@ export default function ObservePage({ runId, onSelectRun }) {
   const job = pack?.job || {};
   const hardware = pack?.hardware || {};
   const software = pack?.software || {};
+  const cache = pack?.cache || {};
+  const probe = cache.probe || {};
   const stages = pack?.charts?.stages || selected?.trace?.stages || [];
   const links = pack?.links || {};
   const running = selected?.state === 'running' || selected?.state === 'queued';
@@ -166,6 +168,12 @@ export default function ObservePage({ runId, onSelectRun }) {
               <div className="resource-card__kind">Description</div>
               <h3>Prompt</h3>
               <p className="observe-prompt">{job.prompt || selected.request?.prompt || '—'}</p>
+              {cache.source_prompt && cache.source_prompt !== (job.prompt || selected.request?.prompt) && (
+                <>
+                  <h3>Source before oMLX</h3>
+                  <p className="observe-prompt">{cache.source_prompt}</p>
+                </>
+              )}
               {job.error && <InlineNotification kind="error" title="Run error" subtitle={job.error} lowContrast />}
             </Tile>
           </div>
@@ -211,6 +219,35 @@ export default function ObservePage({ runId, onSelectRun }) {
                 ['Load', software.load],
                 ['Offload', software.offload],
                 ['LTX tree', software.ltx_tree],
+              ]}
+            />
+            <Details
+              title="oMLX cache"
+              rows={[
+                ['Model', cache.model],
+                ['Default', cache.default_model],
+                ['Admin', cache.admin],
+                ['Models dir', cache.models_dir],
+                ['SSD cache', cache.ssd_dir],
+                ['SSD max', cache.ssd_max],
+                ['SSD files', cache.ssd_files],
+                ['SSD bytes', cache.ssd_bytes != null ? fmtBytes(cache.ssd_bytes) : null],
+                ['Response state', cache.response_state_dir],
+                ['oMLX root', cache.base_path],
+                ['Settings', cache.settings_path],
+                ['Hot RAM cap', cache.hot_cache_max_size],
+                ['Hot bytes', cache.hot_bytes != null ? fmtBytes(cache.hot_bytes) : null],
+                ['Hot only', cache.hot_cache_only == null ? null : cache.hot_cache_only ? 'yes' : 'no'],
+                ['Cached tokens', cache.cached_tokens != null ? `${cache.cached_tokens}/${cache.prompt_tokens}` : null],
+                ['Cache hit', cache.cache_hit == null ? null : cache.cache_hit ? 'yes' : 'cold prefix'],
+                ['TTFT', cache.ttft_ms != null ? `${cache.ttft_ms} ms` : null],
+                ['Block size', cache.block_size],
+                ['Indexed blocks', cache.indexed_blocks],
+                ['Probe hot', probe.total_blocks != null ? `${probe.blocks_hot}/${probe.total_blocks}` : null],
+                ['Probe SSD', probe.blocks_ssd],
+                ['Probe cold', probe.blocks_cold],
+                ['SSD hit tokens', probe.ssd_hit_tokens],
+                ['Hits / misses', cache.hits != null ? `${cache.hits} / ${cache.misses}` : null],
               ]}
             />
           </div>

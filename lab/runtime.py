@@ -8,7 +8,7 @@ import time
 import uuid
 from pathlib import Path
 from shutil import which
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import quote
 
 from lab import ledger, omlx, occupancy
@@ -182,7 +182,7 @@ class Lab:
         lines.append("")
         return "\n".join(lines)
 
-    def generate(self, request: GenerationRequest) -> Run:
+    def generate(self, request: GenerationRequest, omlx_evidence: Optional[dict[str, Any]] = None) -> Run:
         profile = next((e for e in self.engines() if e.id is request.engine), None)
         if profile is None:
             raise EngineBlocked(f"Unknown engine {request.engine.value}")
@@ -206,6 +206,7 @@ class Lab:
             )
         except Exception:
             pass
+        self._write_omlx_evidence(dest, request, omlx_evidence)
         run = Run(
             id=run_id,
             request=request,
@@ -248,6 +249,40 @@ class Lab:
         ledger.save_run(run)
         (dest / "pid").write_text(str(proc.pid))
         return run
+
+    def _write_omlx_evidence(
+        self,
+        dest: Path,
+        request: GenerationRequest,
+        evidence: Optional[dict[str, Any]],
+    ) -> None:
+        payload: dict[str, Any] = {}
+        if isinstance(evidence, dict):
+            payload.update(
+                {
+                    key: value
+                    for key, value in evidence.items()
+                    if key not in {"snapshot"}
+                }
+            )
+        payload["prompt"] = request.prompt
+        try:
+            payload["snapshot"] = omlx.snapshot(
+                model=payload.get("model"),
+                prompt=str(payload.get("source_prompt") or request.prompt),
+                do_probe=True,
+            )
+            snap = payload["snapshot"] or {}
+            payload.setdefault("model", snap.get("model"))
+            payload.setdefault("cache", snap.get("cache"))
+            if snap.get("probe") and not payload.get("probe"):
+                payload["probe"] = snap.get("probe")
+        except Exception as exc:
+            payload["snapshot_error"] = str(exc)
+        try:
+            (dest / "omlx.json").write_text(json.dumps(omlx.drop_secrets(payload), indent=2))
+        except Exception:
+            pass
 
     def get(self, run_id: str) -> Optional[Run]:
         run = ledger.load_run(run_id)
@@ -315,6 +350,8 @@ class Lab:
         log = log_path.read_text(errors="replace")[-12000:] if log_path.exists() else ""
         host = _read_json(dest / "host.json") or {}
         samples = _read_jsonl(dest / "samples.jsonl")
+        omlx_pack = _read_json(dest / "omlx.json") or {}
+        cache = _omlx_report(omlx_pack)
         grafana = self.links().grafana
         mlflow = self.links().mlflow
         spec = run.request.spec
@@ -398,6 +435,8 @@ class Lab:
                 "ltx_tree": host.get("ltx_tree"),
             },
             "host": host or None,
+            "omlx": omlx_pack or None,
+            "cache": cache,
             "samples": samples,
             "charts": {
                 "stages": stages,
@@ -439,6 +478,9 @@ class Lab:
 
     def omlx_status(self) -> dict:
         return omlx.status()
+
+    def omlx_snapshot(self, prompt: Optional[str] = None, model: Optional[str] = None) -> dict:
+        return omlx.snapshot(model=model, prompt=prompt, do_probe=bool(prompt))
 
     def rewrite_prompt(self, prompt: str, model: Optional[str] = None) -> dict:
         return omlx.rewrite(prompt, model=model)
@@ -643,6 +685,50 @@ def _write_pid(name: str, pid: int) -> None:
     data[name] = pid
     PIDS_PATH.parent.mkdir(parents=True, exist_ok=True)
     PIDS_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _omlx_report(pack: dict[str, Any]) -> dict[str, Any]:
+    snap = pack.get("snapshot") if isinstance(pack, dict) else {}
+    if not isinstance(snap, dict):
+        snap = {}
+    cache = dict(pack.get("cache") or snap.get("cache") or {})
+    probe = pack.get("probe") or snap.get("probe") or {}
+    runtime = snap.get("runtime") or {}
+    model_runtime = runtime.get("model") or {}
+    usage = pack.get("usage") or {}
+    return {
+        "used": bool(pack),
+        "model": pack.get("model") or snap.get("model"),
+        "default_model": snap.get("default_model"),
+        "source_prompt": pack.get("source_prompt"),
+        "rewritten": pack.get("prompt") if pack.get("source_prompt") else None,
+        "url": pack.get("url") or snap.get("url"),
+        "admin": snap.get("admin"),
+        "models_dir": cache.get("models_dir") or snap.get("models_dir"),
+        "settings_path": cache.get("settings_path"),
+        "base_path": cache.get("base_path") or runtime.get("base_path"),
+        "ssd_dir": cache.get("ssd_dir") or runtime.get("ssd_dir"),
+        "ssd_max": cache.get("ssd_max"),
+        "response_state_dir": cache.get("response_state_dir") or runtime.get("response_state_dir"),
+        "hot_cache_only": cache.get("hot_cache_only"),
+        "hot_cache_max_size": cache.get("hot_cache_max_size"),
+        "cache_enabled": cache.get("enabled"),
+        "block_size": (probe or {}).get("block_size") or model_runtime.get("block_size"),
+        "indexed_blocks": model_runtime.get("indexed_blocks"),
+        "ssd_files": model_runtime.get("num_files"),
+        "ssd_bytes": model_runtime.get("total_size_bytes"),
+        "hot_bytes": model_runtime.get("hot_cache_size_bytes"),
+        "hot_max_bytes": model_runtime.get("hot_cache_max_bytes"),
+        "hits": model_runtime.get("hits"),
+        "misses": model_runtime.get("misses"),
+        "cached_tokens": usage.get("cached_tokens"),
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "cache_hit": pack.get("cache_hit"),
+        "ttft_ms": usage.get("ttft_ms"),
+        "probe": probe or None,
+        "runtime": runtime or None,
+        "catalog": snap.get("catalog") or [],
+    }
 
 
 def _read_json(path: Path):

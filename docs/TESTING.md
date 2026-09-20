@@ -84,7 +84,7 @@ Sliders go up to 768×1280 and 193 frames (~8s at 24fps). That is slower and mor
 
 ## oMLX (optional prompt rewrite)
 
-oMLX is not required for video. If it is running on `http://127.0.0.1:8000`, Generate shows **Rewrite with oMLX**. Details: [OMLX.md](OMLX.md).
+oMLX is not required for video. If it is running on `http://127.0.0.1:8000`, load the model and set SSD/hot cache in the oMLX admin, then Generate shows **Rewrite with oMLX**. The next Report stores those paths in `omlx.json`. Details: [OMLX.md](OMLX.md).
 
 ```bash
 omlx start

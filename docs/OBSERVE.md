@@ -23,6 +23,7 @@ Load name is `ltx-2.5-22b-distilled`. Memory and CPU gauges are process-wide; pi
 | File | Contents |
 |---|---|
 | `host.json` | Machine, OS, Python, PyTorch, MPS, spec |
+| `omlx.json` | oMLX model, models dir, SSD/hot cache paths, usage, cache probe (written when oMLX is up) |
 | `samples.jsonl` | ~5s RSS / unified / MPS / CPU samples while the worker is up |
 | `worker.log` | Stage and error lines labeled with `run_id` |
 | `output.mp4` | Finished clip |

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, InlineLoading, InlineNotification, Tag, Tile } from '@carbon/react';
 import { Play, Renew, Settings } from '@carbon/icons-react';
-import { fetchStatus } from '../api/lab';
+import { fetchOmlx, fetchStatus } from '../api/lab';
 
 export default function StatusPage({ onOpenGenerate, onOpenControls }) {
   const [status, setStatus] = useState(null);
+  const [omlx, setOmlx] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -12,6 +13,11 @@ export default function StatusPage({ onOpenGenerate, onOpenControls }) {
     setLoading(true);
     try {
       setStatus(await fetchStatus());
+      try {
+        setOmlx(await fetchOmlx());
+      } catch {
+        setOmlx(null);
+      }
       setError(null);
     } catch (err) {
       setError(err.message || String(err));
@@ -91,12 +97,44 @@ export default function StatusPage({ onOpenGenerate, onOpenControls }) {
                 <p>{engine.blocked_reason || `${engine.modality} engine`}</p>
                 {engine.id === 'omlx' && (
                   <p className="resource-card__kind">
-                    Rewrites prompts only. Start with omlx start or oMLX.app. Video stays on LTX-2.
+                    Rewrites prompts only. Load the model and set SSD/hot cache in oMLX admin. Video stays on LTX-2.
+                    {omlx?.how?.admin && (
+                      <>
+                        {' '}
+                        <a href={omlx.how.admin} target="_blank" rel="noreferrer">
+                          Open admin
+                        </a>
+                      </>
+                    )}
                   </p>
                 )}
               </Tile>
             ))}
           </div>
+          {omlx && (
+            <>
+              <h2 className="lab-console__section-title" style={{ marginTop: '2rem' }}>oMLX backend</h2>
+              <div className="resource-grid">
+                <Tile className={`resource-card resource-card--${omlx.ready ? 'up' : 'down'}`}>
+                  <div className="resource-card__top">
+                    <h3>Model and cache</h3>
+                    <Tag type={omlx.ready ? 'green' : 'gray'}>{omlx.ready ? 'ready' : 'down'}</Tag>
+                  </div>
+                  <p>{omlx.default_model || omlx.error || 'No default model'}</p>
+                  <p className="resource-card__kind">Models {omlx.cache?.models_dir}</p>
+                  <p className="resource-card__kind">SSD {omlx.cache?.ssd_dir}{omlx.cache?.ssd_max ? ` · ${omlx.cache.ssd_max}` : ''}</p>
+                  <p className="resource-card__kind">Hot RAM cap {omlx.cache?.hot_cache_max_size || '0'}</p>
+                  {omlx.how?.admin && (
+                    <p className="resource-card__kind">
+                      <a href={omlx.how.admin} target="_blank" rel="noreferrer">
+                        Configure in oMLX admin
+                      </a>
+                    </p>
+                  )}
+                </Tile>
+              </div>
+            </>
+          )}
         </>
       )}
     </section>

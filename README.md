@@ -39,7 +39,7 @@ The lab will not bind a port that is already taken and will not `docker compose 
 
 ## Engines
 
-**LTX-2 distilled** is the default video engine. **LTX-2 DFR** is available when the gated IC-LoRA is on disk; it is slower and hungrier than distilled, so keep the first clip on the 9-frame proof spec with disk offload. **oMLX** is a separate local LLM on `:8000`. Use **Rewrite with oMLX** on Generate (or `./labctl omlx rewrite`) to cache a shared instruction prefix; then generate with LTX as usual. See [docs/OMLX.md](docs/OMLX.md). vLLM and SGLang are still detection-only.
+**LTX-2 distilled** is the default video engine. **LTX-2 DFR** is available when the gated IC-LoRA is on disk; it is slower and hungrier than distilled, so keep the first clip on the 9-frame proof spec with disk offload. **oMLX** is a separate local LLM on `:8000`. Load the model and set SSD/hot cache in the oMLX admin, then use **Rewrite with oMLX** on Generate (or `./labctl omlx rewrite`). The next Report shows those cache paths. See [docs/OMLX.md](docs/OMLX.md). vLLM and SGLang are still detection-only.
 
 ## Layout
 

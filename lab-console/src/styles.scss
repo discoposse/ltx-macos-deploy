@@ -1888,6 +1888,18 @@ body {
   font-family: inherit;
 }
 
+.omlx-assist__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: $spacing-03;
+  min-width: 16rem;
+}
+
+.omlx-assist__meta {
+  overflow-wrap: anywhere;
+}
+
 .ltx-video {
   display: block;
   width: 100%;
