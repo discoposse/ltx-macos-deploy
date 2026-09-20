@@ -128,7 +128,7 @@ class VideoBounds:
 LTX_VIDEO_BOUNDS = VideoBounds(
     height=IntBound(256, 768, 64),
     width=IntBound(256, 1280, 64),
-    frames=IntBound(9, 97, 8),
+    frames=IntBound(9, 193, 8),
 )
 
 
@@ -222,6 +222,7 @@ class Stage:
 class RunTrace:
     run_id: str
     mlflow_run_id: Optional[str] = None
+    mlflow_experiment_id: Optional[str] = None
     stages: list[Stage] = field(default_factory=list)
     current_index: int = 0
     events: list[str] = field(default_factory=list)
@@ -230,6 +231,7 @@ class RunTrace:
         return {
             "run_id": self.run_id,
             "mlflow_run_id": self.mlflow_run_id,
+            "mlflow_experiment_id": self.mlflow_experiment_id,
             "stages": [s.to_dict() for s in self.stages],
             "current_index": self.current_index,
             "events": self.events[-200:],
@@ -313,6 +315,7 @@ class LabLinks:
     mlflow: str
     metrics: str
     loki: str
+    omlx: str = "http://127.0.0.1:8000/admin"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

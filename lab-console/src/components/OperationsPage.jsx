@@ -5,6 +5,7 @@ import { fetchActions, startAction } from '../api/lab';
 const GROUPS = {
   lab: 'Lab',
   observability: 'Observability',
+  omlx: 'oMLX',
 };
 
 export default function OperationsPage() {
@@ -44,7 +45,10 @@ export default function OperationsPage() {
   return (
     <section className="lab-console__section">
       <h1 className="hero-title">Operations</h1>
-      <p className="hero-copy">Start, stop, and recover lab services. Create videos from Generate.</p>
+      <p className="hero-copy">
+        Start, stop, and recover lab services. oMLX is a separate local LLM on :8000 used only to rewrite
+        prompts. Create videos from Generate.
+      </p>
       {error && <InlineNotification kind="error" title="Action failed" subtitle={error} lowContrast />}
       {Object.entries(GROUPS).map(([group, label]) => (
         <div key={group} style={{ marginBottom: '1.5rem' }}>

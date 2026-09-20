@@ -89,6 +89,11 @@ export default function StatusPage({ onOpenGenerate, onOpenControls }) {
                   <Tag type={engine.ready ? 'green' : 'gray'}>{engine.ready ? 'ready' : 'blocked'}</Tag>
                 </div>
                 <p>{engine.blocked_reason || `${engine.modality} engine`}</p>
+                {engine.id === 'omlx' && (
+                  <p className="resource-card__kind">
+                    Rewrites prompts only. Start with omlx start or oMLX.app. Video stays on LTX-2.
+                  </p>
+                )}
               </Tile>
             ))}
           </div>

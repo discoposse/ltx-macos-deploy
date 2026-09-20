@@ -6,7 +6,18 @@ export default defineConfig({
   server: {
     port: 8188,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8199', changeOrigin: true },
+      '/api': {
+        target: 'http://127.0.0.1:8199',
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (_err, _req, res) => {
+            if (res && !res.headersSent) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Lab API is not running. Start it with ./labctl up' }));
+            }
+          });
+        },
+      },
     },
   },
   build: {

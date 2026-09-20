@@ -1,0 +1,76 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "mode": "markdown",
+        "content": "## Join key\n\nLab `run_id` is the session id. It is on `ltx_run_info`, worker logs (`run_id=`), and MLflow tag `run_id`.\n\nLoad name is always `ltx-2.5-22b-distilled`. Memory/CPU gauges are process-wide; pin them to a run with the generation time window.\n\n```promql\nltx_run_info{run_id=\"$run_id\"}\nltx_memory_bytes\nltx_cpu_percent\nltx_memory_bytes{type=~\"mps_.+\"}\nhistogram_quantile(0.95, sum(rate(ltx_duration_seconds_bucket[5m])) by (le, stage))\nltx_ledger_runs\nltx_run_active\n```\n\n```logql\n{job=\"ltx-worker\"} |= `$run_id`\n```"
+      },
+      "title": "Trace queries",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(ltx_ledger_runs)", "legendFormat": "ledger", "refId": "A" }],
+      "title": "Ledger runs",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 8 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "ltx_run_active", "legendFormat": "active", "refId": "A" }],
+      "title": "Worker active",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "ltx_last_run_duration_seconds", "legendFormat": "last", "refId": "A" }],
+      "title": "Last run duration",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 5,
+      "targets": [{ "expr": "ltx_memory_bytes", "legendFormat": "{{type}}", "refId": "A" }],
+      "title": "Worker memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 6,
+      "targets": [{ "expr": "sum(increase(ltx_runs_total[1h])) by (engine, offload)", "legendFormat": "{{engine}} {{offload}}", "refId": "A" }],
+      "title": "Runs started",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["ltx", "queries"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "LTX queries",
+  "uid": "ltx-queries",
+  "version": 1
+}

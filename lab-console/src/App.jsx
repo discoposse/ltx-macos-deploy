@@ -21,7 +21,7 @@ import { fetchLinks } from './api/lab';
 const NAV = [
   { id: 'overview', label: 'Status' },
   { id: 'generate', label: 'Generate' },
-  { id: 'observe', label: 'Observe' },
+  { id: 'observe', label: 'Report' },
   { id: 'library', label: 'Library' },
   { id: 'controls', label: 'Operations' },
 ];
@@ -127,7 +127,9 @@ export default function App() {
         </Header>
         <Content className={`lab-console__main lab-console__main--${tab}`} id="main-content">
           {tab === 'overview' && <StatusPage onOpenGenerate={() => go('generate')} onOpenControls={() => go('controls')} />}
-          {tab === 'generate' && <GeneratePage onOpenObserve={(id) => go('observe', { runId: id })} />}
+          <div hidden={tab !== 'generate'} aria-hidden={tab !== 'generate'}>
+            <GeneratePage onOpenObserve={(id) => go('observe', { runId: id })} />
+          </div>
           {tab === 'observe' && <ObservePage runId={runId} onSelectRun={(id) => go('observe', { runId: id, replace: true })} />}
           {tab === 'library' && <LibraryPage />}
           {tab === 'controls' && <OperationsPage />}

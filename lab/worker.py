@@ -38,6 +38,13 @@ def main() -> int:
     events: list[str] = []
     started = time.time()
 
+    engine = payload.get("engine") or "ltx-distilled"
+    spec = payload.get("spec") or {}
+    load_name = "ltx-2.5-22b-dfr" if engine == "ltx-dfr" else "ltx-2.5-22b-distilled"
+    mlflow_run_id = None
+    mlflow_experiment_id = None
+    observer = None
+
     def flush(**extra):
         body = {
             "run_id": run_id,
@@ -46,6 +53,7 @@ def main() -> int:
             "finished_at": extra.get("finished_at"),
             "error": extra.get("error"),
             "mlflow_run_id": extra.get("mlflow_run_id"),
+            "mlflow_experiment_id": extra.get("mlflow_experiment_id"),
             "sha256": extra.get("sha256"),
             "stages": stages,
             "events": events[-400:],
@@ -54,9 +62,13 @@ def main() -> int:
         status_path.write_text(json.dumps(body, indent=2))
 
     def log(msg: str) -> None:
-        events.append(msg)
-        print(msg, flush=True)
-        flush()
+        prefix = f"run_id={run_id} engine={engine} load={load_name} spec={spec.get('height')}x{spec.get('width')}x{spec.get('frames')}"
+        if mlflow_run_id:
+            prefix += f" mlflow_run_id={mlflow_run_id}"
+        line = f"{prefix} {msg}"
+        events.append(line)
+        print(line, flush=True)
+        flush(mlflow_run_id=mlflow_run_id, mlflow_experiment_id=mlflow_experiment_id)
 
     def start_stage(name: str) -> None:
         for stage in stages:
@@ -64,15 +76,35 @@ def main() -> int:
                 stage["started_at"] = time.time()
                 stage["status"] = "running"
         log(f"STAGE_START {name}")
-        flush()
+        if observer:
+            try:
+                observer.start_stage(name)
+            except Exception:
+                pass
+        flush(mlflow_run_id=mlflow_run_id, mlflow_experiment_id=mlflow_experiment_id)
 
     def end_stage(name: str, ok: bool = True) -> None:
+        duration = None
         for stage in stages:
             if stage["name"] == name:
                 stage["ended_at"] = time.time()
                 stage["status"] = "succeeded" if ok else "failed"
-        log(f"STAGE_END {name}")
-        flush()
+                if stage["started_at"]:
+                    duration = stage["ended_at"] - stage["started_at"]
+        log(f"STAGE_END {name}" + (f" duration={duration:.2f}s" if duration is not None else ""))
+        if observer:
+            try:
+                observer.end_stage(name)
+            except Exception:
+                pass
+        if mlflow_run_id and duration is not None:
+            try:
+                import mlflow
+                if mlflow.active_run():
+                    mlflow.log_metric(f"stage_{name}_s", duration)
+            except Exception:
+                pass
+        flush(mlflow_run_id=mlflow_run_id, mlflow_experiment_id=mlflow_experiment_id)
 
     flush(state="running")
     log(
@@ -82,8 +114,6 @@ def main() -> int:
     os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
     os.environ.setdefault("PYTORCH_MPS_LOW_WATERMARK_RATIO", "0.0")
 
-    mlflow_run_id = None
-    observer = None
     try:
         metrics_port = int(payload.get("metrics_port") or 8001)
         try:
@@ -104,27 +134,52 @@ def main() -> int:
                 tracking = f"sqlite:///{ROOT / 'mlflow.db'}"
             mlflow.set_tracking_uri(tracking)
             mlflow.set_experiment("ltx-lab")
+            experiment = mlflow.get_experiment_by_name("ltx-lab")
+            mlflow_experiment_id = None if experiment is None else experiment.experiment_id
             mlflow.start_run(run_name=run_id)
             mlflow_run_id = mlflow.active_run().info.run_id
-            spec = payload["spec"]
+            grafana = "http://127.0.0.1:3300"
+            console = "http://127.0.0.1:8188"
             mlflow.log_params({
-                "engine": payload.get("engine"),
+                "engine": engine,
+                "load": load_name,
                 "height": spec["height"],
                 "width": spec["width"],
                 "frames": spec["frames"],
                 "fps": spec["fps"],
                 "seed": spec["seed"],
                 "offload": spec.get("offload", "cpu"),
+                "video_name": f"{run_id}/output.mp4",
+            })
+            mlflow.set_tags({
+                "run_id": run_id,
+                "engine": engine,
+                "load": load_name,
+                "video_name": f"{run_id}/output.mp4",
+                "spec": f"{spec.get('height')}x{spec.get('width')}x{spec.get('frames')}",
+                "offload": str(spec.get("offload") or "disk"),
+                "grafana_run": f"{grafana}/d/ltx-run-trace?orgId=1&var-run_id={run_id}",
+                "grafana_overview": f"{grafana}/d/ltx-overview",
+                "console_observe": f"{console}/#observe={run_id}",
             })
             mlflow.log_text(payload["prompt"], "prompt.txt")
-            log(f"mlflow run {mlflow_run_id}")
+            mlflow.log_dict({"run_id": run_id, "engine": engine, "load": load_name, "spec": spec}, "run.json")
+            log(f"mlflow run {mlflow_run_id} experiment={mlflow_experiment_id}")
         except Exception as exc:
             log(f"mlflow unavailable: {exc}")
 
         try:
             from observability.instrument import LTXObserver
-            observer = LTXObserver()
-            observer.start_run(payload["prompt"], payload.get("engine", "ltx-distilled"), payload["spec"])
+            observer = LTXObserver(
+                run_id=run_id,
+                engine=engine,
+                spec=spec,
+                mlflow_run_id=mlflow_run_id or "",
+                prompt=payload.get("prompt") or "",
+                dest=dest,
+                load=load_name,
+            )
+            observer.start_run(payload.get("prompt") or "", engine, spec)
         except Exception as exc:
             log(f"observer unavailable: {exc}")
 
@@ -137,11 +192,26 @@ def main() -> int:
         from ltx_pipelines.utils.types import OffloadMode
         from ltx_core.model.video_vae import get_video_chunks_number
 
+        from lab.hostinfo import capture_host
         from lab.occupancy import weight_paths
+
+        try:
+            host = capture_host(engine, spec, load_name)
+            (dest / "host.json").write_text(json.dumps(host, indent=2))
+            log(
+                "host model=%s mem=%s mps=%s torch=%s"
+                % (host.get("hw_model"), host.get("memory_bytes"), host.get("mps"), host.get("torch"))
+            )
+            if mlflow_run_id:
+                import mlflow
+                if mlflow.active_run():
+                    mlflow.log_dict(host, "host.json")
+        except Exception as exc:
+            log(f"host snapshot skipped: {exc}")
 
         paths = weight_paths()
         for key, path in paths.items():
-            if key == "lora":
+            if key == "lora" and engine != "ltx-dfr":
                 continue
             if not path.exists():
                 raise FileNotFoundError(f"Missing weight {key}: {path}")
@@ -161,20 +231,33 @@ def main() -> int:
         # Distilled CLI runs under inference_mode. Disk streaming loads weights
         # as inference tensors; a grad-enabled forward then raises.
         with torch.inference_mode():
-            pipeline = DistilledPipeline(
-                model_paths=model_paths,
-                spatial_upsampler_path=str(paths["upsampler"]),
-                loras=[],
-                offload_mode=offload,
-                diffvae_optimization=DiffVAEMode.CHUNKED_EAGER,
-            )
+            if engine == "ltx-dfr":
+                from ltx_core.loader import LTXV_LORA_COMFY_RENAMING_MAP, LoraPathStrengthAndSDOps
+                from ltx_pipelines.dfr_pipeline import DFRPipeline
+
+                pipeline = DFRPipeline(
+                    model_paths=model_paths,
+                    spatial_upsampler_path=str(paths["upsampler"]),
+                    loras=[],
+                    detailing_lora=[
+                        LoraPathStrengthAndSDOps(str(paths["lora"]), 0.5, LTXV_LORA_COMFY_RENAMING_MAP)
+                    ],
+                    offload_mode=offload,
+                    diffvae_optimization=DiffVAEMode.CHUNKED_EAGER,
+                )
+            else:
+                pipeline = DistilledPipeline(
+                    model_paths=model_paths,
+                    spatial_upsampler_path=str(paths["upsampler"]),
+                    loras=[],
+                    offload_mode=offload,
+                    diffvae_optimization=DiffVAEMode.CHUNKED_EAGER,
+                )
             end_stage("load")
 
             start_stage("encode")
             end_stage("encode")
             start_stage("generate")
-            if observer:
-                observer.start_stage("generate")
             hdr = resolve_hdr_color_space(images=[], hdr=None)
             vae_dtype = vae_dtype_for_hdr(hdr, torch.bfloat16)
             if torch.backends.mps.is_available():
@@ -190,20 +273,23 @@ def main() -> int:
             # AUTO_TILING plans a min ~80f x 320x320 tile and refuses when MPS
             # usable bytes are under ~2GiB after weights load. Untiled decode of
             # the actual clip (defaults 9x256x384) is smaller than that floor.
-            result = pipeline(
-                prompt=payload["prompt"],
-                seed=int(spec["seed"]),
-                height=int(spec["height"]),
-                width=int(spec["width"]),
-                num_frames=int(spec["frames"]),
-                frame_rate=int(spec["fps"]),
-                images=[],
-                vae_dtype=vae_dtype,
-                color_space=hdr,
-                tiling_config=None,
-            )
-            if observer:
-                observer.end_stage("generate")
+            generate_kwargs = {
+                "prompt": payload["prompt"],
+                "seed": int(spec["seed"]),
+                "height": int(spec["height"]),
+                "width": int(spec["width"]),
+                "num_frames": int(spec["frames"]),
+                "frame_rate": int(spec["fps"]),
+                "images": [],
+                "tiling_config": None,
+            }
+            if engine != "ltx-dfr":
+                generate_kwargs["vae_dtype"] = vae_dtype
+                generate_kwargs["color_space"] = hdr
+            else:
+                generate_kwargs["temporal_upscalings"] = 0
+                generate_kwargs["spatial_upscalings"] = 1
+            result = pipeline(**generate_kwargs)
             end_stage("generate")
 
             start_stage("write")
@@ -227,11 +313,33 @@ def main() -> int:
             if mlflow.active_run():
                 mlflow.log_metric("duration_s", duration)
                 mlflow.log_metric("size_bytes", output_path.stat().st_size)
+                try:
+                    mlflow.log_metric("mps_allocated", float(torch.mps.current_allocated_memory()))
+                    mlflow.log_metric("mps_driver", float(torch.mps.driver_allocated_memory()))
+                except Exception:
+                    pass
+                log_path = dest / "worker.log"
+                if log_path.exists():
+                    mlflow.log_artifact(str(log_path), artifact_path="logs")
+                host_path = dest / "host.json"
+                if host_path.exists():
+                    mlflow.log_artifact(str(host_path), artifact_path="report")
+                samples_path = dest / "samples.jsonl"
+                if samples_path.exists():
+                    mlflow.log_artifact(str(samples_path), artifact_path="report")
                 mlflow.log_artifact(str(output_path), artifact_path="video")
+                mlflow.set_tag("status", "succeeded")
                 mlflow.end_run()
         except Exception:
             pass
-        flush(state="succeeded", finished_at=time.time(), mlflow_run_id=mlflow_run_id, sha256=digest, metrics={"duration_s": duration})
+        flush(
+            state="succeeded",
+            finished_at=time.time(),
+            mlflow_run_id=mlflow_run_id,
+            mlflow_experiment_id=mlflow_experiment_id,
+            sha256=digest,
+            metrics={"duration_s": duration},
+        )
         return 0
     except Exception as exc:
         err = f"{exc}\n{traceback.format_exc()}"

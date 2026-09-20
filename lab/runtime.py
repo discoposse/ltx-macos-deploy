@@ -9,8 +9,10 @@ import uuid
 from pathlib import Path
 from shutil import which
 from typing import Optional
+from urllib.parse import quote
 
-from lab import ledger, occupancy
+from lab import ledger, omlx, occupancy
+from lab.hostinfo import LOAD_NAME, capture_host
 from lab.types import (
     LTX_BAND,
     LTX_ROOT,
@@ -25,6 +27,7 @@ from lab.types import (
     LabBusy,
     LabLinks,
     OccupancyError,
+    OccupancyView,
     Readiness,
     ReadinessState,
     Run,
@@ -36,8 +39,15 @@ from lab.types import (
 ACTIONS = (
     LabAction("obs_up", "Start observability stack", "observability", False),
     LabAction("obs_down", "Stop observability stack", "observability", True, "Stops only ltx-obs containers."),
-    LabAction("lab_down", "Stop LTX lab", "lab", True, "Stops LTX API, console, MLflow, and ltx-obs. Leaves other labs running."),
+    LabAction("lab_down", "Stop LTX lab", "lab", True, "Stops LTX API, console, MLflow, and ltx-obs. Leaves oMLX running."),
     LabAction("cancel_run", "Cancel running generation", "lab", True, "Stops the LTX worker process."),
+    LabAction(
+        "omlx_clear_cache",
+        "Clear oMLX hot + SSD cache",
+        "omlx",
+        True,
+        "Drops oMLX prefix cache. The next rewrite is a cold prefill; video generation is unchanged.",
+    ),
 )
 
 
@@ -60,45 +70,117 @@ class Lab:
             mlflow=f"http://127.0.0.1:{p['mlflow']}",
             metrics=f"http://127.0.0.1:{p['metrics']}/metrics",
             loki=f"http://127.0.0.1:{p['loki']}",
+            omlx=f"{omlx.base_url()}/admin",
         )
 
     def engines(self):
         return occupancy.detect_engines()
 
     def readiness(self) -> Readiness:
-        engines = self.engines()
-        distilled = next(e for e in engines if e.id is EngineId.ltx_distilled)
+        try:
+            engines = self.engines()
+        except Exception:
+            engines = occupancy.detect_engines()
+        distilled = next((e for e in engines if e.id == EngineId.ltx_distilled), None)
         docker_ok = which("docker") is not None
         grafana_ok, grafana_d = occupancy.http_ok(f"http://127.0.0.1:{self.ports['grafana']}/api/health")
         prom_ok, prom_d = occupancy.http_ok(f"http://127.0.0.1:{self.ports['prometheus']}/-/ready")
         loki_ok, loki_d = occupancy.http_ok(f"http://127.0.0.1:{self.ports['loki']}/ready")
         mlflow_ok, mlflow_d = occupancy.http_ok(f"http://127.0.0.1:{self.ports['mlflow']}")
+        omlx_info = omlx.status()
+        omlx_ready = bool(omlx_info.get("ready"))
+        omlx_detail = omlx_info.get("error") or (
+            f"{omlx_info.get('default_model') or 'no model'} · {omlx_info.get('url')} · SSD cache {omlx_info.get('cache', {}).get('ssd_dir')}"
+        )
         api_ok = occupancy.port_open(self.ports["lab_api"])
         console_ok = occupancy.port_open(self.ports["console"]) or occupancy.port_open(self.ports["lab_api"])
         venv = LTX_ROOT / ".venv/bin/python"
+        weights_up = bool(distilled and distilled.ready)
+        weights_detail = (distilled.blocked_reason if distilled else "engine list missing") or "Split 2.5 pack present"
         components = [
             Component("docker", "Docker Desktop", "host", "up" if docker_ok else "down", True, "Required for ltx-obs", "Open Docker Desktop"),
-            Component("weights", "LTX-2 distilled weights", "weights", "up" if distilled.ready else "down", True, distilled.blocked_reason or "Split 2.5 pack present", "Run ./setup-ltx-macos.sh"),
+            Component("weights", "LTX-2 distilled weights", "weights", "up" if weights_up else "down", True, weights_detail, "Run ./setup-ltx-macos.sh"),
             Component("venv", "LTX Python environment", "engine", "up" if venv.exists() else "down", True, str(venv), "cd LTX-2 && uv sync"),
-            Component("lab-api", "Lab control plane", "control", "up" if api_ok else "down", True, f"127.0.0.1:{self.ports['lab_api']}", "Run ./lab up"),
-            Component("console", "Carbon console", "control", "up" if console_ok else "down", True, self.links().console, "Run ./lab up"),
-            Component("grafana", "Grafana (ltx-obs)", "observe", "up" if grafana_ok else "down", True, grafana_d, "Run ./lab up"),
-            Component("prometheus", "Prometheus (ltx-obs)", "observe", "up" if prom_ok else "down", True, prom_d, "Run ./lab up"),
-            Component("loki", "Loki (ltx-obs)", "observe", "up" if loki_ok else "down", False, loki_d, "Run ./lab up"),
+            Component("lab-api", "Lab control plane", "control", "up" if api_ok else "down", True, f"127.0.0.1:{self.ports['lab_api']}", "Run ./labctl up"),
+            Component("console", "Carbon console", "control", "up" if console_ok else "down", True, self.links().console, "Run ./labctl up"),
+            Component("grafana", "Grafana (ltx-obs)", "observe", "up" if grafana_ok else "down", True, grafana_d, "Run ./labctl up"),
+            Component("prometheus", "Prometheus (ltx-obs)", "observe", "up" if prom_ok else "down", True, prom_d, "Run ./labctl up"),
+            Component("loki", "Loki (ltx-obs)", "observe", "up" if loki_ok else "down", False, loki_d, "Run ./labctl up"),
             Component("mlflow", "MLflow UI", "observe", "up" if mlflow_ok else "down", False, mlflow_d, "uv pip install mlflow in LTX-2 venv"),
+            Component(
+                "omlx",
+                "oMLX prompt rewrite",
+                "text",
+                "up" if omlx_ready else "down",
+                False,
+                omlx_detail,
+                "Open oMLX.app or run: omlx start",
+            ),
         ]
         required_down = [c for c in components if c.required and c.state != "up"]
         state = ReadinessState.ready if not required_down else ReadinessState.blocked
         if not api_ok:
             state = ReadinessState.starting if not required_down else ReadinessState.blocked
+        try:
+            occ = occupancy.occupancy_view(exclusive=self._lease is not None)
+        except Exception:
+            occ = OccupancyView(band="ltx-81xx", attached_neighbors=(), exclusive=False)
         return Readiness(
             state=state,
             checked_at=time.time(),
             components=components,
-            occupancy=occupancy.occupancy_view(exclusive=self._lease is not None),
+            occupancy=occ,
             links=self.links(),
             engines=engines,
         )
+
+    def metrics_text(self) -> str:
+        def esc(value) -> str:
+            return str(value or "none").replace("\\", "\\\\").replace("\"", "\\\"")
+
+        lines = [
+            "# HELP ltx_ledger_runs Generations stored in the lab ledger by state",
+            "# TYPE ltx_ledger_runs gauge",
+        ]
+        counts: dict[str, int] = {}
+        runs = self.list_runs(80)
+        for run in runs:
+            counts[run.state.value] = counts.get(run.state.value, 0) + 1
+        if not counts:
+            lines.append('ltx_ledger_runs{state="none"} 0')
+        for state, n in sorted(counts.items()):
+            lines.append(f'ltx_ledger_runs{{state="{esc(state)}"}} {n}')
+        latest = runs[0] if runs else None
+        lines += [
+            "# HELP ltx_run_info Identity of the most recent ledger run",
+            "# TYPE ltx_run_info gauge",
+        ]
+        if latest:
+            spec = latest.request.spec
+            artifact = (latest.artifact.path if latest.artifact else f"runs/{latest.id}/output.mp4")
+            labels = ",".join(
+                [
+                    f'run_id="{esc(latest.id)}"',
+                    f'engine="{esc(latest.request.engine.value)}"',
+                    f'load="{LOAD_NAME}"',
+                    f'spec="{esc(f"{spec.height}x{spec.width}x{spec.frames}")}"',
+                    f'offload="{esc(spec.offload)}"',
+                    f'video="{esc(Path(artifact).name)}"',
+                    f'mlflow_run_id="{esc(latest.trace.mlflow_run_id)}"',
+                    f'state="{esc(latest.state.value)}"',
+                ]
+            )
+            lines.append(f"ltx_run_info{{{labels}}} 1")
+            if latest.finished_at and latest.started_at:
+                lines += [
+                    "# HELP ltx_last_run_duration_seconds Wall time of the most recent finished run",
+                    "# TYPE ltx_last_run_duration_seconds gauge",
+                    f"ltx_last_run_duration_seconds {latest.finished_at - latest.started_at}",
+                ]
+        else:
+            lines.append('ltx_run_info{run_id="none",engine="none",load="none",spec="none",offload="none",video="none",mlflow_run_id="none",state="none"} 0')
+        lines.append("")
+        return "\n".join(lines)
 
     def generate(self, request: GenerationRequest) -> Run:
         profile = next((e for e in self.engines() if e.id is request.engine), None)
@@ -107,13 +189,23 @@ class Lab:
         if not profile.ready:
             raise EngineBlocked(profile.blocked_reason or f"{profile.label} is not ready")
         if profile.modality.value != "video":
-            raise EngineBlocked(f"{profile.label} is detected for later swap; iteration 1 generates video via LTX-2")
+            raise EngineBlocked(
+                f"{profile.label} rewrites prompts only. Generate video with LTX-2 Distilled, or use Rewrite with oMLX first."
+            )
         busy = ledger.active_run()
         if busy:
-            raise LabBusy(f"Run {busy.id} is {busy.state.value}")
+            busy = self.get(busy.id) or busy
+            if not busy.is_terminal():
+                raise LabBusy(f"Run {busy.id} is {busy.state.value}")
         run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
         dest = ledger.run_dir(run_id)
         dest.mkdir(parents=True, exist_ok=True)
+        try:
+            (dest / "host.json").write_text(
+                json.dumps(capture_host(request.engine.value, request.spec.to_dict()), indent=2)
+            )
+        except Exception:
+            pass
         run = Run(
             id=run_id,
             request=request,
@@ -161,22 +253,27 @@ class Lab:
         run = ledger.load_run(run_id)
         if not run:
             return None
+        return self._hydrate(run, persist=True)
+
+    def list_runs(self, limit: int = 40) -> list[Run]:
+        return [self._hydrate(r, persist=False) for r in ledger.list_runs(limit)]
+
+    def _hydrate(self, run: Run, persist: bool) -> Run:
+        before = run.state
         run = ledger.merge_worker_status(run)
         if run.pid and run.state in {RunState.queued, RunState.running}:
-            if not _pid_alive(run.pid) and run.state is RunState.running:
+            if not _pid_alive(run.pid):
                 video = ledger.run_dir(run.id) / "output.mp4"
                 if video.exists() and video.stat().st_size > 0:
                     run.state = RunState.succeeded
-                    run.finished_at = time.time()
+                    run.finished_at = run.finished_at or time.time()
                 else:
                     run.state = RunState.failed
-                    run.finished_at = time.time()
+                    run.finished_at = run.finished_at or time.time()
                     run.error = run.error or "Worker exited without writing output.mp4"
-        ledger.save_run(run)
+        if persist or run.state is not before:
+            ledger.save_run(run)
         return run
-
-    def list_runs(self, limit: int = 40) -> list[Run]:
-        return [self.get(r.id) or r for r in ledger.list_runs(limit)]
 
     def wait(self, run_id: str, timeout_s: Optional[float] = None) -> Run:
         start = time.time()
@@ -213,19 +310,138 @@ class Lab:
         run = self.get(run_id)
         if run is None:
             raise FileNotFoundError(run_id)
-        log_path = ledger.run_dir(run_id) / "worker.log"
-        log = log_path.read_text(errors="replace")[-8000:] if log_path.exists() else ""
+        dest = ledger.run_dir(run_id)
+        log_path = dest / "worker.log"
+        log = log_path.read_text(errors="replace")[-12000:] if log_path.exists() else ""
+        host = _read_json(dest / "host.json") or {}
+        samples = _read_jsonl(dest / "samples.jsonl")
+        grafana = self.links().grafana
+        mlflow = self.links().mlflow
+        spec = run.request.spec
+        load = str(host.get("load") or LOAD_NAME)
+        video = f"{run.id}/output.mp4"
+        from_ms, to_ms = _grafana_window(run)
+        grafana_run = (
+            f"{grafana}/d/ltx-run-trace?orgId=1&var-run_id={quote(run.id)}"
+            f"&from={from_ms}&to={to_ms}&theme=dark"
+        )
+        solo = (
+            f"{grafana}/d-solo/ltx-run-trace/run-trace?orgId=1&theme=dark"
+            f"&from={from_ms}&to={to_ms}&var-run_id={quote(run.id)}"
+        )
+        mlflow_run = mlflow
+        if run.trace.mlflow_run_id and run.trace.mlflow_experiment_id:
+            mlflow_run = f"{mlflow}/#/experiments/{run.trace.mlflow_experiment_id}/runs/{run.trace.mlflow_run_id}"
+        elif run.trace.mlflow_run_id:
+            mlflow_run = f"{mlflow}/#/search?searchFilter=tags.run_id%3D{run.id}"
+        grafana_ok, _ = occupancy.http_ok(f"{grafana}/api/health")
+        duration = None
+        if run.started_at and run.finished_at:
+            duration = round(run.finished_at - run.started_at, 2)
+        stages = [s.to_dict() for s in run.trace.stages]
         return {
             "run": run.to_dict(),
             "log": log,
+            "identity": {
+                "run_id": run.id,
+                "load": load,
+                "video": video,
+                "engine": run.request.engine.value,
+                "spec": f"{spec.height}x{spec.width}x{spec.frames}",
+                "offload": spec.offload,
+                "mlflow_run_id": run.trace.mlflow_run_id,
+            },
+            "job": {
+                "run_id": run.id,
+                "state": run.state.value,
+                "engine": run.request.engine.value,
+                "load": load,
+                "prompt": run.request.prompt,
+                "height": spec.height,
+                "width": spec.width,
+                "frames": spec.frames,
+                "fps": spec.fps,
+                "seed": spec.seed,
+                "offload": spec.offload,
+                "started_at": run.started_at or run.created_at,
+                "finished_at": run.finished_at,
+                "duration_s": duration,
+                "video": video,
+                "size_bytes": None if run.artifact is None else run.artifact.size_bytes,
+                "sha256": None if run.artifact is None else run.artifact.sha256,
+                "mlflow_run_id": run.trace.mlflow_run_id,
+                "mlflow_experiment_id": run.trace.mlflow_experiment_id,
+                "error": run.error,
+                "pinned": run.pinned,
+            },
+            "hardware": {
+                "hostname": host.get("hostname"),
+                "hw_model": host.get("hw_model"),
+                "processor": host.get("processor"),
+                "arch": host.get("arch"),
+                "cpu_count": host.get("cpu_count"),
+                "memory_bytes": host.get("memory_bytes"),
+                "memory_available_bytes": host.get("memory_available_bytes"),
+                "mps": host.get("mps"),
+                "mps_recommended": host.get("mps_recommended"),
+                "mps_allocated": host.get("mps_allocated"),
+                "mps_driver": host.get("mps_driver"),
+            },
+            "software": {
+                "os": host.get("os"),
+                "python": host.get("python"),
+                "python_impl": host.get("python_impl"),
+                "torch": host.get("torch"),
+                "engine": host.get("engine") or run.request.engine.value,
+                "load": load,
+                "offload": spec.offload,
+                "ltx_tree": host.get("ltx_tree"),
+            },
+            "host": host or None,
+            "samples": samples,
+            "charts": {
+                "stages": stages,
+                "memory": [
+                    {"t": row.get("t"), "rss": row.get("rss"), "unified": row.get("unified"), "mps_allocated": row.get("mps_allocated")}
+                    for row in samples
+                    if row.get("t") is not None
+                ],
+                "cpu": [{"t": row.get("t"), "v": row.get("cpu_percent")} for row in samples if row.get("cpu_percent") is not None],
+            },
+            "grafana_up": grafana_ok,
+            "window": {"from_ms": from_ms, "to_ms": to_ms},
+            "embeds": [
+                {"id": "memory", "title": "Memory", "panel_id": 2, "url": f"{solo}&panelId=2"},
+                {"id": "cpu", "title": "CPU", "panel_id": 3, "url": f"{solo}&panelId=3"},
+                {"id": "mps", "title": "MPS", "panel_id": 4, "url": f"{solo}&panelId=4"},
+                {"id": "stages", "title": "Stage duration", "panel_id": 5, "url": f"{solo}&panelId=5"},
+                {"id": "logs", "title": "Worker log", "panel_id": 6, "url": f"{solo}&panelId=6"},
+            ],
             "layers": [
                 {"id": "prompt", "title": "Prompt", "why": "User intent", "note": run.request.prompt},
                 {"id": "encode", "title": "Text encoder", "why": "Gemma embeddings", "note": "Stage encode"},
                 {"id": "denoise", "title": "Transformer", "why": "Distilled denoise at half then full res", "note": "Stage generate"},
                 {"id": "decode", "title": "VAE + mux", "why": "Pixels + audio to mp4", "note": "Stage write"},
             ],
-            "links": self.links().to_dict(),
+            "links": {
+                **self.links().to_dict(),
+                "grafana_run": grafana_run,
+                "grafana_overview": f"{grafana}/d/ltx-overview",
+                "grafana_queries": f"{grafana}/d/ltx-queries",
+                "mlflow_run": mlflow_run,
+                "prometheus_run": (
+                    f"{self.links().prometheus}/graph?g0.expr="
+                    + quote(f'ltx_run_info{{run_id="{run.id}"}}')
+                    + f"&g0.from={from_ms}&g0.to={to_ms}"
+                ),
+            },
         }
+
+    def omlx_status(self) -> dict:
+        return omlx.status()
+
+    def rewrite_prompt(self, prompt: str, model: Optional[str] = None) -> dict:
+        return omlx.rewrite(prompt, model=model)
 
     def actions(self) -> tuple[LabAction, ...]:
         return ACTIONS
@@ -250,6 +466,9 @@ class Lab:
                 code, log = 0, f"cancelled {busy.id}"
             else:
                 code, log = 0, "no active run"
+        elif action_id == "omlx_clear_cache":
+            cleared = omlx.clear_cache()
+            code, log = 0, json.dumps(cleared, indent=2)
         else:
             raise KeyError(action_id)
         return {"id": action_id, "exit_code": code, "log": log}
@@ -352,6 +571,30 @@ def start_mlflow(port: int, root: Path) -> None:
         env=env,
     )
     _write_pid("mlflow", proc.pid)
+    try:
+        subprocess.run(
+            [
+                str(LTX_ROOT / ".venv/bin/python"),
+                "-c",
+                (
+                    "import mlflow; from mlflow.tracking import MlflowClient; "
+                    f"mlflow.set_tracking_uri('sqlite:///{db}'); "
+                    "mlflow.set_experiment('ltx-lab'); "
+                    "c=MlflowClient(); e=c.get_experiment_by_name('ltx-lab'); "
+                    "c.set_experiment_tag(e.experiment_id,'purpose','LTX-2 distilled video generations'); "
+                    "c.set_experiment_tag(e.experiment_id,'grafana','http://127.0.0.1:3300/d/ltx-overview'); "
+                    "c.set_experiment_tag(e.experiment_id,'grafana_trace','http://127.0.0.1:3300/d/ltx-run-trace'); "
+                    "c.set_experiment_tag(e.experiment_id,'console','http://127.0.0.1:8188'); "
+                    "print(e.experiment_id)"
+                ),
+            ],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception:
+        pass
 
 
 def stop_mlflow() -> None:
@@ -400,3 +643,39 @@ def _write_pid(name: str, pid: int) -> None:
     data[name] = pid
     PIDS_PATH.parent.mkdir(parents=True, exist_ok=True)
     PIDS_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _read_json(path: Path):
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _read_jsonl(path: Path, limit: int = 360) -> list:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    rows = []
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    for line in lines[-limit:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+def _grafana_window(run: Run) -> tuple[int, int]:
+    start = (run.started_at or run.created_at or time.time()) - 30
+    end = (run.finished_at or time.time()) + 30
+    if end <= start:
+        end = start + 60
+    return int(start * 1000), int(end * 1000)

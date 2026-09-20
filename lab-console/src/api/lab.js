@@ -6,77 +6,86 @@ async function read(res) {
   return body;
 }
 
-export async function fetchStatus() {
-  const res = await fetch('/api/lab/status', { cache: 'no-store' });
+async function labFetch(path, options) {
+  let res;
+  try {
+    res = await fetch(path, { cache: 'no-store', ...options });
+  } catch (err) {
+    throw new Error('Lab API is not running on :8199. Start it with ./labctl up');
+  }
   return read(res);
+}
+
+export async function fetchStatus() {
+  return labFetch('/api/lab/status');
 }
 
 export async function fetchEngines() {
-  const res = await fetch('/api/engines', { cache: 'no-store' });
-  return read(res);
+  return labFetch('/api/engines');
 }
 
 export async function fetchLinks() {
-  const res = await fetch('/api/links', { cache: 'no-store' });
-  return read(res);
+  return labFetch('/api/links');
 }
 
 export async function fetchRuns() {
-  const res = await fetch('/api/runs', { cache: 'no-store' });
-  return read(res);
+  return labFetch('/api/runs');
 }
 
 export async function fetchRun(id) {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}`, { cache: 'no-store' });
-  return read(res);
+  return labFetch(`/api/runs/${encodeURIComponent(id)}`);
 }
 
 export async function fetchRunLog(id, tail = 400) {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/log?tail=${tail}`, { cache: 'no-store' });
-  return read(res);
+  return labFetch(`/api/runs/${encodeURIComponent(id)}/log?tail=${tail}`);
 }
 
 export async function fetchObserve(id) {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/observe`, { cache: 'no-store' });
-  return read(res);
+  return labFetch(`/api/runs/${encodeURIComponent(id)}/observe`);
 }
 
 export async function generate(payload) {
-  const res = await fetch('/api/generate', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(payload) });
-  return read(res);
+  return labFetch('/api/generate', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(payload) });
 }
 
 export async function cancelRun(id) {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: 'POST', headers: jsonHeaders, body: '{}' });
-  return read(res);
+  return labFetch(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: 'POST', headers: jsonHeaders, body: '{}' });
 }
 
 export async function pinRun(id, label) {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/pin`, {
+  return labFetch(`/api/runs/${encodeURIComponent(id)}/pin`, {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ label }),
   });
-  return read(res);
 }
 
 export async function fetchReferences() {
-  const res = await fetch('/api/references', { cache: 'no-store' });
-  return read(res);
+  return labFetch('/api/references');
 }
 
 export async function fetchActions() {
-  const res = await fetch('/api/actions', { cache: 'no-store' });
-  return read(res);
+  return labFetch('/api/actions');
 }
 
 export async function startAction(id, confirm = false) {
-  const res = await fetch(`/api/actions/${encodeURIComponent(id)}`, {
+  return labFetch(`/api/actions/${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ confirm }),
   });
-  return read(res);
+}
+
+export async function fetchOmlx() {
+  return labFetch('/api/omlx');
+}
+
+export async function rewritePrompt(prompt, model) {
+  return labFetch('/api/omlx/rewrite', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ prompt, model }),
+  });
 }
 
 export function videoUrl(runId) {

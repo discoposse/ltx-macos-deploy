@@ -18,3 +18,10 @@ datasources:
     uid: loki
     url: http://loki:3100
     editable: false
+    jsonData:
+      derivedFields:
+        - datasourceUid: prometheus
+          matcherRegex: "run_id=([0-9A-Za-z-]+)"
+          name: Run
+          url: "/d/ltx-run-trace?orgId=1&var-run_id=${__value.raw}"
+          urlDisplayLabel: "Open run"

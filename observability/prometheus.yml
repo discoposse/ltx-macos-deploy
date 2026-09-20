@@ -12,3 +12,9 @@ scrape_configs:
       - targets: ["host.docker.internal:8001"]
     metrics_path: /metrics
     scrape_interval: 5s
+
+  - job_name: ltx-lab-api
+    static_configs:
+      - targets: ["host.docker.internal:8199"]
+    metrics_path: /metrics
+    scrape_interval: 15s

@@ -10,11 +10,11 @@ This repository is the **lab kit**. It does not contain LTX-2 source or model we
 open http://127.0.0.1:8188
 ```
 
-Tester walkthrough: [docs/TESTING.md](docs/TESTING.md). Licenses: [LICENSE](LICENSE), [NOTICE](NOTICE), [docs/LICENSES.md](docs/LICENSES.md).
+Tester walkthrough: [docs/TESTING.md](docs/TESTING.md). Session report: [docs/OBSERVE.md](docs/OBSERVE.md). oMLX prompt rewrite: [docs/OMLX.md](docs/OMLX.md). Licenses: [LICENSE](LICENSE), [NOTICE](NOTICE), [docs/LICENSES.md](docs/LICENSES.md).
 
 ## Generate
 
-On **Generate**, run one clip at a time. Defaults are a short proof (256×384, 9 frames, disk offload) so the first video can finish on a loaded Mac. **Observe** follows prompt → stages → mp4. **Pin as reference** copies the clip into `references/`.
+On **Generate**, run one clip at a time. Defaults are a short proof (256×384, 9 frames, disk offload) so the first video can finish on a loaded Mac. **Report** loads that session’s video, prompt, job, host, and charts. **Pin as reference** copies the clip into `references/`.
 
 ```bash
 ./labctl status
@@ -39,7 +39,7 @@ The lab will not bind a port that is already taken and will not `docker compose 
 
 ## Engines
 
-Iteration 1 generates video with **LTX-2 distilled**. DFR is listed but blocked until the gated IC-LoRA is present. vLLM, SGLang, and oMLX are detected when those servers are already running; they are not generation backends yet.
+**LTX-2 distilled** is the default video engine. **LTX-2 DFR** is available when the gated IC-LoRA is on disk; it is slower and hungrier than distilled, so keep the first clip on the 9-frame proof spec with disk offload. **oMLX** is a separate local LLM on `:8000`. Use **Rewrite with oMLX** on Generate (or `./labctl omlx rewrite`) to cache a shared instruction prefix; then generate with LTX as usual. See [docs/OMLX.md](docs/OMLX.md). vLLM and SGLang are still detection-only.
 
 ## Layout
 

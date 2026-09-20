@@ -50,7 +50,7 @@ On **Generate**:
 2. Use any lawful prompt.
 3. Click **Generate**. Expect on the order of **8–15 minutes** for the first success (disk offload rereads weights each denoise step).
 4. When the player appears, click **Pin as reference**.
-5. Open **Observe** for stages + log, **Library** for the pin.
+5. Open **Report** for the clip, prompt, job, host, and charts. **Library** holds pins.
 
 CLI equivalent:
 
@@ -67,20 +67,30 @@ Pass:
 
 - Status shows the lab ready (weights, venv, API, console, Grafana, Prometheus).
 - Generate writes `runs/<id>/output.mp4` (H.264, audio optional).
-- Observe shows load / encode / generate / write.
+- Report shows the mp4, prompt, job details, and stage timings. New runs also store `host.json` and `samples.jsonl` for memory/CPU charts.
 - Pin appears in Library.
 - MLflow has an `ltx-lab` experiment run.
 - `./labctl down` stops this lab only.
 
 Fail:
 
-- Missing weights or gated DFR LoRA (DFR is listed as unavailable until that LoRA exists; distilled does not need it).
+- Missing distilled weights. DFR also needs `LTX-2/models/ltx-2.5/loras/ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors` (gated Hugging Face repo; accept access, then download with `HF_TOKEN`).
 - AUTO tiling / OOM on larger sliders — drop back to 9 frames and disk offload.
 - Port already bound — stop the leftover LTX process, do not kill foreign compose projects.
 
 ## Larger clips
 
-Sliders go up to 768×1280 and 97 frames. That is slower and more likely to exhaust unified memory. Prove 9 frames first.
+Sliders go up to 768×1280 and 193 frames (~8s at 24fps). That is slower and more likely to exhaust unified memory. Prove 9 frames first, then 97, then 193.
+
+## oMLX (optional prompt rewrite)
+
+oMLX is not required for video. If it is running on `http://127.0.0.1:8000`, Generate shows **Rewrite with oMLX**. Details: [OMLX.md](OMLX.md).
+
+```bash
+omlx start
+./labctl omlx
+./labctl omlx rewrite "a red hatchback on a coastal runway"
+```
 
 ## Stop
 

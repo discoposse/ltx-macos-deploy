@@ -21,15 +21,15 @@
       "id": 2,
       "title": "Runs by pipeline",
       "type": "timeseries",
-      "targets": [{ "expr": "sum(increase(ltx_runs_total[5m])) by (pipeline)", "legendFormat": "{{pipeline}}", "refId": "A" }]
+      "targets": [{ "expr": "sum(increase(ltx_runs_total[5m])) by (engine, offload)", "legendFormat": "{{engine}} {{offload}}", "refId": "A" }]
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
       "id": 3,
-      "title": "ltx-obs container logs",
+      "title": "Worker + stack logs",
       "type": "logs",
-      "targets": [{ "expr": "{compose_service=~\".+\"}", "refId": "A" }]
+      "targets": [{ "expr": "{job=~\"ltx-worker|ltx-docker\"}", "refId": "A" }]
     }
   ],
   "refresh": "5s",

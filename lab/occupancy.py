@@ -4,6 +4,7 @@ import json
 import shutil
 import socket
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -46,17 +47,24 @@ def http_ok(url: str, timeout: float = 1.2) -> tuple[bool, str]:
 
 
 def docker_names() -> set[str]:
+    now = time.monotonic()
+    cached = getattr(docker_names, "_cache", None)
+    if cached and now - cached[0] < 15:
+        return cached[1]
     if not shutil.which("docker"):
+        docker_names._cache = (now, set())
         return set()
     try:
         out = subprocess.check_output(
             ["docker", "ps", "-a", "--format", "{{.Names}}"],
             text=True,
-            timeout=8,
+            timeout=2,
         )
-        return {line.strip() for line in out.splitlines() if line.strip()}
+        names = {line.strip() for line in out.splitlines() if line.strip()}
     except Exception:
-        return set()
+        names = set()
+    docker_names._cache = (now, names)
+    return names
 
 
 def neighbors() -> tuple[str, ...]:
@@ -120,6 +128,10 @@ def occupancy_view(exclusive: bool) -> OccupancyView:
 
 
 def detect_engines() -> list[EngineProfile]:
+    now = time.monotonic()
+    cached = getattr(detect_engines, "_cache", None)
+    if cached and now - cached[0] < 15:
+        return cached[1]
     distilled = LTX_ROOT / "models/ltx-2.5/diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors"
     text = LTX_ROOT / "models/ltx-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"
     video_vae = LTX_ROOT / "models/ltx-2.5/vae/ltx-2.5-video-vae-bf16.safetensors"
@@ -135,13 +147,17 @@ def detect_engines() -> list[EngineProfile]:
     ]
     distilled_ready = not missing_distilled
 
-    vllm_ok, vllm_detail = http_ok("http://127.0.0.1:8100/v1/models")
-    omlx_ok, omlx_detail = http_ok("http://127.0.0.1:8000/health")
-    if not omlx_ok:
-        omlx_ok, omlx_detail = http_ok("http://127.0.0.1:8000/v1/models")
-    sglang_ok, sglang_detail = http_ok("http://127.0.0.1:30000/v1/models")
+    vllm_ok, vllm_detail = http_ok("http://127.0.0.1:8100/v1/models", timeout=0.4)
+    try:
+        from lab import omlx as omlx_client
+        omlx_info = omlx_client.status()
+        omlx_ok = bool(omlx_info.get("ready"))
+        omlx_detail = omlx_info.get("error") or omlx_info.get("default_model")
+    except Exception as exc:
+        omlx_ok, omlx_detail = False, str(exc)
+    sglang_ok, sglang_detail = http_ok("http://127.0.0.1:30000/v1/models", timeout=0.4)
 
-    return [
+    engines = [
         EngineProfile(
             id=EngineId.ltx_distilled,
             label="LTX-2 Distilled (local video)",
@@ -158,7 +174,11 @@ def detect_engines() -> list[EngineProfile]:
             ready=distilled_ready and lora.exists(),
             blocked_reason=None
             if distilled_ready and lora.exists()
-            else "DFR LoRA not downloaded (gated Hugging Face repo)",
+            else (
+                f"Missing: {', '.join(missing_distilled)}"
+                if not distilled_ready
+                else "DFR LoRA not downloaded (gated Hugging Face repo)"
+            ),
             bounds=LTX_VIDEO_BOUNDS,
             default_spec=DEFAULT_SPEC,
         ),
@@ -182,14 +202,16 @@ def detect_engines() -> list[EngineProfile]:
         ),
         EngineProfile(
             id=EngineId.omlx,
-            label="oMLX (detected, later swap)",
+            label="oMLX (prompt rewrite)",
             modality=Modality.text,
             ready=omlx_ok,
-            blocked_reason=None if omlx_ok else omlx_detail,
+            blocked_reason=None if omlx_ok else (omlx_detail or "Open oMLX.app or run: omlx start"),
             bounds=None,
             default_spec=None,
         ),
     ]
+    detect_engines._cache = (now, engines)
+    return engines
 
 
 def weight_paths() -> dict[str, Path]:

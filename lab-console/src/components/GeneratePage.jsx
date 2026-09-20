@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button,
   Dropdown,
@@ -13,7 +13,7 @@ import {
   Tile,
 } from '@carbon/react';
 import { Pin, StopOutline, VideoPlayer } from '@carbon/icons-react';
-import { cancelRun, fetchEngines, fetchRun, fetchRunLog, fetchRuns, generate, pinRun, videoUrl } from '../api/lab';
+import { cancelRun, fetchEngines, fetchOmlx, fetchRun, fetchRunLog, fetchRuns, generate, pinRun, rewritePrompt, videoUrl } from '../api/lab';
 
 const DEFAULT_PROMPT =
   'A red hatchback dropped from a helicopter onto a windy coastal runway, cinematic lighting, shallow depth of field, 24fps';
@@ -29,8 +29,13 @@ export default function GeneratePage({ onOpenObserve }) {
   const [run, setRun] = useState(null);
   const [log, setLog] = useState('');
   const [error, setError] = useState(null);
+  const [apiError, setApiError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [omlx, setOmlx] = useState(null);
+  const [rewriteBusy, setRewriteBusy] = useState(false);
+  const [rewriteInfo, setRewriteInfo] = useState(null);
+  const runIdRef = useRef(null);
 
   const refreshRun = useCallback(async (id) => {
     const next = await fetchRun(id);
@@ -40,33 +45,58 @@ export default function GeneratePage({ onOpenObserve }) {
     return next;
   }, []);
 
-  useEffect(() => {
-    fetchEngines()
-      .then((data) => {
-        const list = data.engines || [];
-        setEngines(list);
+  const loadMeta = useCallback(async () => {
+    try {
+      const data = await fetchEngines();
+      const list = data.engines || [];
+      setEngines(list.filter((item) => item.modality === 'video'));
+      setEngine((current) => {
+        if (current) return list.find((item) => item.id === current.id) || current;
         const ready = list.find((item) => item.ready && item.modality === 'video') || list[0];
-        setEngine(ready);
         if (ready?.default_spec) {
           setHeight(ready.default_spec.height);
           setWidth(ready.default_spec.width);
           setFrames(ready.default_spec.frames);
           setSeed(ready.default_spec.seed);
         }
-      })
-      .catch((err) => setError(err.message));
-    fetchRuns()
-      .then((data) => {
-        const list = data.runs || [];
-        const active = list.find((item) => item.state === 'running' || item.state === 'queued');
-        const latest = active || list.find((item) => item.state === 'succeeded') || list[0];
+        return ready || null;
+      });
+      setApiError(null);
+    } catch (err) {
+      setApiError(err.message);
+    }
+    fetchOmlx()
+      .then(setOmlx)
+      .catch(() => setOmlx(null));
+    try {
+      const data = await fetchRuns();
+      const list = data.runs || [];
+      const active = list.find((item) => item.state === 'running' || item.state === 'queued');
+      if (active) {
+        runIdRef.current = active.id;
+        refreshRun(active.id).catch(() => {});
+      } else if (!runIdRef.current) {
+        const latest = list.find((item) => item.state === 'succeeded') || list[0];
         if (latest) {
-          setRun(latest);
+          runIdRef.current = latest.id;
           refreshRun(latest.id).catch(() => {});
         }
-      })
-      .catch(() => {});
+      }
+    } catch {
+      /* keep last known run while the API is down */
+    }
   }, [refreshRun]);
+
+  useEffect(() => {
+    runIdRef.current = run?.id || runIdRef.current;
+  }, [run?.id]);
+
+  useEffect(() => {
+    loadMeta();
+    if (engines.length > 0 && !apiError) return undefined;
+    const id = setInterval(loadMeta, 3000);
+    return () => clearInterval(id);
+  }, [engines.length, apiError, loadMeta]);
 
   useEffect(() => {
     if (!run?.id || ['succeeded', 'failed', 'cancelled'].includes(run.state)) return undefined;
@@ -75,6 +105,20 @@ export default function GeneratePage({ onOpenObserve }) {
     }, 2000);
     return () => clearInterval(id);
   }, [run?.id, run?.state, refreshRun]);
+
+  const onRewrite = async () => {
+    setError(null);
+    setRewriteBusy(true);
+    try {
+      const result = await rewritePrompt(prompt);
+      setRewriteInfo(result);
+      if (result.prompt) setPrompt(result.prompt);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRewriteBusy(false);
+    }
+  };
 
   const onGenerate = async () => {
     setError(null);
@@ -87,6 +131,7 @@ export default function GeneratePage({ onOpenObserve }) {
         spec: { height, width, frames, fps: 24, seed, offload: engine?.default_spec?.offload || 'disk' },
       });
       setRun(accepted);
+      runIdRef.current = accepted.id;
     } catch (err) {
       setError(err.message);
     } finally {
@@ -111,11 +156,12 @@ export default function GeneratePage({ onOpenObserve }) {
         <div className="toolbar">
           {run?.id && (
             <Button kind="tertiary" size="md" onClick={() => onOpenObserve(run.id)}>
-              Observe run
+              Open report
             </Button>
           )}
         </div>
       </div>
+      {apiError && <InlineNotification kind="error" title="Lab API unreachable" subtitle={apiError} lowContrast />}
       {error && <InlineNotification kind="error" title="Generation blocked" subtitle={error} lowContrast />}
       {notice && <InlineNotification kind="success" title="Saved" subtitle={notice} lowContrast />}
       <div className="generate-layout">
@@ -127,6 +173,46 @@ export default function GeneratePage({ onOpenObserve }) {
             rows={6}
             onChange={(e) => setPrompt(e.target.value)}
           />
+          <div className="omlx-assist">
+            <div className="omlx-assist__copy">
+              <strong>oMLX rewrite</strong>
+              <p>
+                Optional. Sends this prompt to the local oMLX LLM on :8000 with a fixed system prefix so KV
+                blocks can stay cached. LTX-2 still generates the video.
+              </p>
+              {omlx?.ready ? (
+                <p className="omlx-assist__meta">
+                  {omlx.default_model || 'model ready'} · SSD cache {omlx.cache?.ssd_dir || 'on'}
+                  {omlx.how?.admin && (
+                    <>
+                      {' · '}
+                      <a href={omlx.how.admin} target="_blank" rel="noreferrer">
+                        oMLX admin
+                      </a>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <p className="omlx-assist__meta">
+                  {omlx?.error || 'oMLX is not running.'} Start it with <code>omlx start</code> or open oMLX.app,
+                  then refresh. Do not generate video while a large oMLX model is loaded if memory is tight.
+                </p>
+              )}
+              {rewriteInfo && (
+                <p className="omlx-assist__meta">
+                  Last rewrite: {rewriteInfo.model}
+                  {rewriteInfo.usage?.cached_tokens != null && (
+                    <> · cached {rewriteInfo.usage.cached_tokens}/{rewriteInfo.usage.prompt_tokens} tokens</>
+                  )}
+                  {rewriteInfo.usage?.ttft_ms != null && <> · TTFT {rewriteInfo.usage.ttft_ms} ms</>}
+                  {rewriteInfo.cache_hit ? ' · cache hit' : ' · cold prefix'}
+                </p>
+              )}
+            </div>
+            <Button kind="tertiary" size="md" onClick={onRewrite} disabled={rewriteBusy || !omlx?.ready || busy}>
+              {rewriteBusy ? 'Rewriting…' : 'Rewrite with oMLX'}
+            </Button>
+          </div>
           <div className="form-grid" style={{ marginTop: '1rem' }}>
             <Dropdown
               id="engine"
@@ -162,7 +248,7 @@ export default function GeneratePage({ onOpenObserve }) {
                 onChange={({ value }) => setWidth(value)}
               />
               <Slider
-                labelText={`Frames (${frames}, 8k+1)`}
+                labelText={`Frames (${frames}, ${(frames / 24).toFixed(1)}s @ 24fps, 8k+1)`}
                 min={bounds.frames.min}
                 max={bounds.frames.max}
                 step={8}

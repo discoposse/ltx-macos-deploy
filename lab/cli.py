@@ -53,6 +53,21 @@ def cmd_url(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_omlx(args: argparse.Namespace) -> int:
+    from lab import omlx
+
+    cmd = args.omlx_cmd or "status"
+    if cmd == "rewrite":
+        print(json.dumps(omlx.rewrite(args.prompt), indent=2))
+        return 0
+    if cmd == "clear-cache":
+        print(json.dumps(omlx.clear_cache(), indent=2))
+        return 0
+    info = omlx.status()
+    print(json.dumps(info, indent=2))
+    return 0 if info.get("ready") else 1
+
+
 def cmd_generate(args: argparse.Namespace) -> int:
     from lab.types import PROOF_SPEC
 
@@ -79,8 +94,10 @@ def cmd_pin(args: argparse.Namespace) -> int:
 
 
 def _start_api(lab: Lab) -> None:
-    if __import__("lab.occupancy", fromlist=["port_open"]).port_open(lab.ports["lab_api"]):
+    from lab.occupancy import port_open
+    if port_open(lab.ports["lab_api"]):
         return
+    (LAB_ROOT / ".lab").mkdir(parents=True, exist_ok=True)
     log = open(LAB_ROOT / ".lab" / "api.log", "w")
     proc = subprocess.Popen(
         [sys.executable, "-m", "lab.api"],
@@ -91,8 +108,8 @@ def _start_api(lab: Lab) -> None:
         env={**os.environ, "PYTHONPATH": str(LAB_ROOT)},
     )
     _write_pid("api", proc.pid)
-    for _ in range(20):
-        if __import__("lab.occupancy", fromlist=["port_open"]).port_open(lab.ports["lab_api"]):
+    for _ in range(40):
+        if port_open(lab.ports["lab_api"]):
             return
         time.sleep(0.2)
 
@@ -126,8 +143,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("down").set_defaults(func=cmd_down)
     sub.add_parser("status").set_defaults(func=cmd_status)
     url = sub.add_parser("url")
-    url.add_argument("name", choices=["console", "grafana", "prometheus", "mlflow", "metrics", "loki"])
+    url.add_argument("name", choices=["console", "grafana", "prometheus", "mlflow", "metrics", "loki", "omlx"])
     url.set_defaults(func=cmd_url)
+    omlx_p = sub.add_parser("omlx", help="oMLX prompt rewrite status")
+    omlx_sub = omlx_p.add_subparsers(dest="omlx_cmd")
+    omlx_p.set_defaults(func=cmd_omlx, omlx_cmd="status")
+    omlx_sub.add_parser("status")
+    rewrite = omlx_sub.add_parser("rewrite")
+    rewrite.add_argument("prompt")
+    omlx_sub.add_parser("clear-cache")
     gen = sub.add_parser("generate")
     gen.add_argument("prompt", nargs="?")
     gen.add_argument("--engine", default="ltx-distilled")

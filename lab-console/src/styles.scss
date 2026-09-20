@@ -104,6 +104,10 @@ body {
   box-sizing: border-box;
 }
 
+.lab-console__main [hidden] {
+  display: none !important;
+}
+
 // Docs tab: wider content column
 .lab-console__main--docs > *,
 .lab-console__main--compare > *,
@@ -695,6 +699,164 @@ body {
 .observe-meta span {
   @include type-style('label-01');
   color: $text-secondary;
+}
+
+.observe-hero {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1.2fr) minmax(16rem, 1fr);
+  gap: $spacing-05;
+  margin-bottom: $spacing-05;
+}
+
+.observe-prompt {
+  @include type-style('body-01');
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.observe-dl {
+  display: grid;
+  gap: $spacing-03;
+  margin: $spacing-04 0 0;
+}
+
+.observe-dl__row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: $spacing-03;
+}
+
+.observe-dl dt {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.observe-dl dd {
+  @include type-style('body-compact-01');
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.observe-chart-card {
+  padding: $spacing-05;
+  background: $layer-01;
+  border: 1px solid $border-subtle-01;
+}
+
+.observe-chart-card h3 {
+  @include type-style('heading-compact-01');
+  margin: 0 0 $spacing-03;
+}
+
+.observe-chart-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: $spacing-04;
+  align-items: baseline;
+}
+
+.observe-chart-card__hover,
+.observe-chart-card__legend {
+  @include type-style('label-01');
+  color: $text-secondary;
+}
+
+.observe-chart-card__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-04;
+  margin-top: $spacing-03;
+}
+
+.observe-chart-card__legend i {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.25rem;
+  margin-right: $spacing-02;
+  vertical-align: middle;
+}
+
+.observe-chart__axis,
+.observe-chart__cursor {
+  stroke: $border-subtle-01;
+  stroke-width: 1;
+}
+
+.observe-chart__tick {
+  @include type-style('label-01');
+  fill: $text-secondary;
+  font-size: 10px;
+}
+
+.observe-bars {
+  display: grid;
+  gap: $spacing-03;
+}
+
+.observe-bar {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr) 4.5rem;
+  gap: $spacing-03;
+  align-items: center;
+}
+
+.observe-bar span,
+.observe-bar strong {
+  @include type-style('label-01');
+}
+
+.observe-bar__track {
+  height: 0.5rem;
+  background: $layer-02;
+}
+
+.observe-bar__fill {
+  height: 100%;
+  background: $support-info;
+}
+
+.observe-bar__fill--succeeded {
+  background: $support-success;
+}
+
+.observe-bar__fill--failed {
+  background: $support-error;
+}
+
+.observe-bar__fill--running {
+  background: $support-warning;
+}
+
+.observe-embeds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: $spacing-04;
+}
+
+.observe-embed {
+  margin: 0;
+}
+
+.observe-embed figcaption {
+  @include type-style('label-01');
+  color: $text-secondary;
+  margin-bottom: $spacing-02;
+}
+
+.observe-embed iframe {
+  display: block;
+  width: 100%;
+  height: 16rem;
+  border: 1px solid $border-subtle-01;
+  background: $layer-02;
+}
+
+@media (max-width: 42rem) {
+  .observe-hero,
+  .observe-bar,
+  .observe-dl__row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stack-layers__row {
@@ -1700,6 +1862,30 @@ body {
   display: grid;
   grid-template-columns: minmax(18rem, 1fr) minmax(22rem, 1.3fr);
   gap: $spacing-05;
+}
+
+.omlx-assist {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-05;
+  margin-top: $spacing-05;
+  padding-top: $spacing-05;
+  border-top: 1px solid $border-subtle-01;
+}
+
+.omlx-assist__copy {
+  min-width: 0;
+}
+
+.omlx-assist__copy p,
+.omlx-assist__meta {
+  margin: $spacing-02 0 0;
+  color: $text-secondary;
+}
+
+.omlx-assist__copy code {
+  font-family: inherit;
 }
 
 .ltx-video {

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -35,21 +37,31 @@ def new_stages() -> list[Stage]:
     return [Stage(name=n, label=l) for n, l in STAGE_DEFS]
 
 
+_LEDGER_LOCK = threading.Lock()
+
+
 def save_run(run: Run) -> None:
     path = run_dir(run.id)
     path.mkdir(parents=True, exist_ok=True)
     dest = path / "run.json"
-    tmp = path / "run.json.tmp"
-    tmp.write_text(json.dumps(run.to_dict(), indent=2))
-    tmp.replace(dest)
+    tmp = path / f".run.json.{os.getpid()}.{threading.get_ident()}.tmp"
+    payload = json.dumps(run.to_dict(), indent=2)
+    with _LEDGER_LOCK:
+        tmp.write_text(payload)
+        tmp.replace(dest)
 
 
 def load_run(run_id: str) -> Optional[Run]:
     path = run_dir(run_id) / "run.json"
-    if not path.exists() or path.stat().st_size == 0:
-        return None
+    with _LEDGER_LOCK:
+        if not path.exists() or path.stat().st_size == 0:
+            return None
+        try:
+            raw = path.read_text()
+        except OSError:
+            return None
     try:
-        return run_from_dict(json.loads(path.read_text()))
+        return run_from_dict(json.loads(raw))
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return None
 
@@ -104,6 +116,7 @@ def run_from_dict(data: dict) -> Run:
         trace=RunTrace(
             run_id=data["id"],
             mlflow_run_id=trace_data.get("mlflow_run_id"),
+            mlflow_experiment_id=trace_data.get("mlflow_experiment_id"),
             stages=stages,
             current_index=int(trace_data.get("current_index") or 0),
             events=list(trace_data.get("events") or []),
@@ -134,6 +147,8 @@ def merge_worker_status(run: Run) -> Run:
         run.error = status["error"]
     if status.get("mlflow_run_id"):
         run.trace.mlflow_run_id = status["mlflow_run_id"]
+    if status.get("mlflow_experiment_id"):
+        run.trace.mlflow_experiment_id = str(status["mlflow_experiment_id"])
     if status.get("stages"):
         run.trace.stages = [
             Stage(

@@ -24,3 +24,19 @@ scrape_configs:
         target_label: compose_service
     pipeline_stages:
       - docker: {}
+
+  - job_name: ltx-worker
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: ltx-worker
+          __path__: /host/runs/*/worker.log
+    pipeline_stages:
+      - regex:
+          expression: 'run_id=(?P<run_id>[0-9A-Za-z-]+)'
+      - labels:
+          run_id:
+      - regex:
+          expression: 'engine=(?P<engine>[^\s]+)'
+      - labels:
+          engine:

@@ -17,6 +17,7 @@ from lab.types import (
     OccupancyError,
     SpecError,
 )
+from lab.omlx import OmlxError
 
 CONSOLE_DIST = ROOT / "lab-console" / "dist"
 
@@ -58,14 +59,41 @@ def make_handler(lab: Lab):
             self.end_headers()
 
         def do_GET(self) -> None:  # noqa: N802
+            try:
+                self._do_GET()
+            except Exception as exc:
+                try:
+                    self._json(500, {"error": str(exc)})
+                except Exception:
+                    pass
+
+        def _do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
             qs = parse_qs(parsed.query)
+            if path in {"/metrics", "/api/metrics"}:
+                body = lab.metrics_text().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+                self._cors()
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path in {"/api/health"}:
                 self._json(200, {"ok": True, "root": str(ROOT)})
                 return
             if path in {"/api/lab/status", "/api/status"}:
-                self._json(200, lab.readiness().to_dict())
+                try:
+                    self._json(200, lab.readiness().to_dict())
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
+            if path == "/api/omlx":
+                try:
+                    self._json(200, lab.omlx_status())
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
                 return
             if path == "/api/engines":
                 self._json(200, {"engines": [e.to_dict() for e in lab.engines()]})
@@ -77,7 +105,10 @@ def make_handler(lab: Lab):
                 self._json(200, {"actions": [a.to_dict() for a in lab.actions()]})
                 return
             if path == "/api/runs":
-                self._json(200, {"runs": [r.to_dict() for r in lab.list_runs()]})
+                try:
+                    self._json(200, {"runs": [r.to_dict() for r in lab.list_runs()]})
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
                 return
             if path == "/api/references":
                 from lab import ledger
@@ -129,6 +160,15 @@ def make_handler(lab: Lab):
             self._serve_static(path)
 
         def do_POST(self) -> None:  # noqa: N802
+            try:
+                self._do_POST()
+            except Exception as exc:
+                try:
+                    self._json(500, {"error": str(exc)})
+                except Exception:
+                    pass
+
+        def _do_POST(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
             length = int(self.headers.get("Content-Length") or 0)
@@ -137,6 +177,24 @@ def make_handler(lab: Lab):
                 body = json.loads(raw.decode("utf-8") or "{}")
             except json.JSONDecodeError:
                 self._json(400, {"error": "invalid json"})
+                return
+            if path == "/api/omlx/rewrite":
+                try:
+                    prompt = str(body.get("prompt") or "")
+                    model = body.get("model")
+                    self._json(200, lab.rewrite_prompt(prompt, model=model))
+                except OmlxError as exc:
+                    self._json(503, {"error": str(exc)})
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
+            if path == "/api/omlx/cache/clear":
+                try:
+                    self._json(200, lab.start_action("omlx_clear_cache", confirm=True))
+                except OmlxError as exc:
+                    self._json(503, {"error": str(exc)})
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
                 return
             if path == "/api/generate":
                 try:
