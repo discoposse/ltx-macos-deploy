@@ -12,13 +12,13 @@ import {
   TextArea,
   Tile,
 } from '@carbon/react';
-import { Pin, StopOutline, VideoPlayer } from '@carbon/icons-react';
-import { cancelRun, fetchEngines, fetchOmlx, fetchRun, fetchRunLog, fetchRuns, generate, pinRun, rewritePrompt, videoUrl } from '../api/lab';
+import { Pin, StopOutline, VideoPlayer, Launch } from '@carbon/icons-react';
+import { cancelRun, fetchComfy, fetchEngines, fetchOmlx, fetchRun, fetchRunLog, fetchRuns, generate, pinRun, rewritePrompt, videoUrl } from '../api/lab';
 
 const DEFAULT_PROMPT =
   'A red hatchback dropped from a helicopter onto a windy coastal runway, cinematic lighting, shallow depth of field, 24fps';
 
-export default function GeneratePage({ onOpenObserve }) {
+export default function GeneratePage({ onOpenObserve, jobs }) {
   const [engines, setEngines] = useState([]);
   const [engine, setEngine] = useState(null);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
@@ -36,6 +36,8 @@ export default function GeneratePage({ onOpenObserve }) {
   const [omlxModel, setOmlxModel] = useState(null);
   const [rewriteBusy, setRewriteBusy] = useState(false);
   const [rewriteInfo, setRewriteInfo] = useState(null);
+  const [comfy, setComfy] = useState(null);
+  const [workflow, setWorkflow] = useState(null);
   const runIdRef = useRef(null);
 
   const omlxModels = (omlx?.catalog?.length ? omlx.catalog : (omlx?.models || []).map((id) => ({ id }))).map((item) => {
@@ -86,6 +88,16 @@ export default function GeneratePage({ onOpenObserve }) {
         });
       })
       .catch(() => setOmlx(null));
+    fetchComfy()
+      .then((data) => {
+        setComfy(data);
+        const list = data?.workflows || [];
+        setWorkflow((current) => {
+          if (current && list.some((item) => item.id === current.id)) return current;
+          return list[0] || null;
+        });
+      })
+      .catch(() => setComfy(null));
     try {
       const data = await fetchRuns();
       const list = data.runs || [];
@@ -146,6 +158,7 @@ export default function GeneratePage({ onOpenObserve }) {
       const accepted = await generate({
         prompt,
         engine: engine.id,
+        workflow: engine.id === 'comfyui' ? workflow?.id : undefined,
         spec: { height, width, frames, fps: 24, seed, offload: engine?.default_spec?.offload || 'disk' },
         omlx: {
           model: rewriteInfo?.model || omlxModel?.id || omlx?.default_model,
@@ -159,6 +172,9 @@ export default function GeneratePage({ onOpenObserve }) {
       });
       setRun(accepted);
       runIdRef.current = accepted.id;
+      if (accepted.state === 'queued') {
+        setNotice(`Queued behind the current worker. This clip starts automatically.`);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -170,27 +186,46 @@ export default function GeneratePage({ onOpenObserve }) {
   const stages = run?.trace?.stages || [];
   const current = stages.findIndex((s) => s.status === 'running');
   const currentIndex = current >= 0 ? current : stages.filter((s) => s.status === 'succeeded').length;
+  const queued = jobs?.queued || [];
+  const workflows = (comfy?.workflows || []).map((item) => ({
+    ...item,
+    label: item.source === 'user' ? item.id : `${item.id} (bundled)`,
+  }));
+  const comfyEngine = engine?.id === 'comfyui';
+  const generateBlocked = busy || !engine?.ready || (comfyEngine && !workflow);
 
   return (
     <section className="lab-console__section">
-      <div className="section-heading-row">
-        <div>
-          <h1 className="hero-title">Generate video</h1>
-          <p className="hero-copy">
-            Write a prompt, set resolution and length, and run one generation at a time.
-          </p>
-        </div>
-        <div className="toolbar">
-          {run?.id && (
-            <Button kind="tertiary" size="md" onClick={() => onOpenObserve(run.id)}>
-              Open report
+      <div className="generate-hero">
+        <div className="section-heading-row" style={{ marginBottom: 0 }}>
+          <div>
+            <h1 className="hero-title">Stage a clip, then walk away</h1>
+            <p className="hero-copy">
+              Generation runs as a background worker on this Mac. Leave the page, queue the next shot,
+              or drop Wi-Fi — the current job keeps going and writes into <code>runs/</code>.
+            </p>
+            <span className="local-chip">Local · 127.0.0.1 · no cloud</span>
+          </div>
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <Button
+              kind="tertiary"
+              size="md"
+              renderIcon={Launch}
+              onClick={() => window.open(comfy?.ui || 'http://127.0.0.1:8189', '_blank', 'noopener')}
+            >
+              Open ComfyUI
             </Button>
-          )}
+            {run?.id && (
+              <Button kind="tertiary" size="md" onClick={() => onOpenObserve(run.id)}>
+                Open report
+              </Button>
+            )}
+          </div>
         </div>
       </div>
       {apiError && <InlineNotification kind="error" title="Lab API unreachable" subtitle={apiError} lowContrast />}
       {error && <InlineNotification kind="error" title="Generation blocked" subtitle={error} lowContrast />}
-      {notice && <InlineNotification kind="success" title="Saved" subtitle={notice} lowContrast />}
+      {notice && <InlineNotification kind="success" title="Background task" subtitle={notice} lowContrast />}
       <div className="generate-layout">
         <Tile className="panel">
           <TextArea
@@ -284,6 +319,44 @@ export default function GeneratePage({ onOpenObserve }) {
               </Button>
             </div>
           </div>
+          <div className="omlx-assist">
+            <div className="omlx-assist__copy">
+              <strong>ComfyUI graph</strong>
+              <p>
+                This lab console already owns :8188, so ComfyUI lives in a separate tree
+                (<code>~/Documents/ComfyUI</code>, not this repo — there is no <code>main.py</code> here).
+                Run <code>./labctl comfy start</code> to clone it if needed and listen on :8189.
+                Then File → Export (API) into <code>workflows/comfy/</code>. Generate fills prompt,
+                seed, size, frames, and fps and queues that graph.
+              </p>
+              {comfy?.ready ? (
+                <p className="omlx-assist__meta">
+                  {comfy.how}
+                  {comfy.queue && (
+                    <>
+                      {' · queue '}
+                      {comfy.queue.running} running / {comfy.queue.pending} pending
+                    </>
+                  )}
+                  {comfy.model_hint ? ` · ${comfy.model_hint}` : ''}
+                </p>
+              ) : (
+                <p className="omlx-assist__meta">
+                  {comfy?.error || 'ComfyUI is not running.'} {comfy?.how || 'Start it on 127.0.0.1:8189.'}
+                </p>
+              )}
+            </div>
+            <div className="omlx-assist__actions">
+              <Button
+                kind="tertiary"
+                size="md"
+                renderIcon={Launch}
+                onClick={() => window.open(comfy?.ui || 'http://127.0.0.1:8189', '_blank', 'noopener')}
+              >
+                Open ComfyUI
+              </Button>
+            </div>
+          </div>
           <div className="form-grid" style={{ marginTop: '1rem' }}>
             <Dropdown
               id="engine"
@@ -293,6 +366,18 @@ export default function GeneratePage({ onOpenObserve }) {
               selectedItem={engine}
               onChange={({ selectedItem }) => setEngine(selectedItem)}
             />
+            {comfyEngine && (
+              <Dropdown
+                id="comfy-workflow"
+                titleText="ComfyUI workflow"
+                label="Export an API graph first"
+                items={workflows}
+                itemToString={(item) => (item ? item.label || item.id : '')}
+                selectedItem={workflows.find((item) => item.id === workflow?.id) || workflow}
+                onChange={({ selectedItem }) => setWorkflow(selectedItem)}
+                disabled={!workflows.length || busy}
+              />
+            )}
             <NumberInput
               id="seed"
               label="Seed"
@@ -334,9 +419,9 @@ export default function GeneratePage({ onOpenObserve }) {
               size="md"
               renderIcon={VideoPlayer}
               onClick={onGenerate}
-              disabled={busy || !engine?.ready || run?.state === 'running' || run?.state === 'queued'}
+              disabled={generateBlocked}
             >
-              Generate
+              {jobs?.running ? 'Queue clip' : 'Generate'}
             </Button>
             {(run?.state === 'running' || run?.state === 'queued') && (
               <Button kind="danger--tertiary" size="md" renderIcon={StopOutline} onClick={() => cancelRun(run.id).then(setRun)}>
@@ -363,8 +448,23 @@ export default function GeneratePage({ onOpenObserve }) {
             <h3>Live run</h3>
             {run && <Tag type={run.state === 'succeeded' ? 'green' : run.state === 'failed' ? 'red' : 'blue'}>{run.state}</Tag>}
           </div>
-          {!run && <p className="hero-copy">Progress and the finished clip appear here.</p>}
-          {busy && <InlineLoading description="Queueing…" />}
+          {!run && <p className="hero-copy">Progress and the finished clip appear here. The worker does not need this tab to stay open.</p>}
+          {busy && <InlineLoading description="Queueing background task…" />}
+          {queued.length > 0 && (
+            <div className="queue-rail">
+              {queued.map((item) => (
+                <div key={item.id} className="queue-chip">
+                  <div>
+                    <strong>{item.id}</strong>
+                    <span>{item.request?.prompt || 'Queued clip'}</span>
+                  </div>
+                  <Button kind="ghost" size="sm" onClick={() => cancelRun(item.id).then(() => refreshRun(run?.id || item.id).catch(() => {}))}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
           {stages.length > 0 && (
             <ProgressIndicator currentIndex={Math.min(currentIndex, Math.max(stages.length - 1, 0))} spaceEqually>
               {stages.map((stage) => (

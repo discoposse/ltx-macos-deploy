@@ -4,6 +4,8 @@ import json
 import os
 import signal
 import subprocess
+import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -11,11 +13,13 @@ from shutil import which
 from typing import Any, Optional
 from urllib.parse import quote
 
-from lab import ledger, omlx, occupancy
+from lab import comfy, ledger, omlx, occupancy
 from lab.hostinfo import LOAD_NAME, capture_host
 from lab.types import (
+    CONSOLE_DIST,
     LTX_BAND,
     LTX_ROOT,
+    MAX_QUEUE,
     PIDS_PATH,
     ROOT,
     RUNS_DIR,
@@ -42,11 +46,31 @@ ACTIONS = (
     LabAction("lab_down", "Stop LTX lab", "lab", True, "Stops LTX API, console, MLflow, and ltx-obs. Leaves oMLX running."),
     LabAction("cancel_run", "Cancel running generation", "lab", True, "Stops the LTX worker process."),
     LabAction(
+        "reclaim_runs",
+        "Reclaim disk from old runs",
+        "storage",
+        True,
+        "Deletes older unpinned runs. Keeps the latest 5 clips and every pinned reference.",
+    ),
+    LabAction(
         "omlx_clear_cache",
         "Clear oMLX hot + SSD cache",
         "omlx",
         True,
         "Drops oMLX prefix cache. The next rewrite is a cold prefill; video generation is unchanged.",
+    ),
+    LabAction(
+        "comfy_start",
+        "Start ComfyUI on :8189",
+        "comfy",
+        False,
+    ),
+    LabAction(
+        "comfy_interrupt",
+        "Interrupt ComfyUI queue",
+        "comfy",
+        True,
+        "Stops the current ComfyUI graph. Does not stop the LTX distilled worker.",
     ),
 )
 
@@ -56,6 +80,9 @@ class Lab:
         self.root = root or ROOT
         self.ports = dict(LTX_BAND)
         self._lease: Optional[dict] = occupancy.read_lease()
+        self._dispatch_lock = threading.Lock()
+        self._dispatch_stop = threading.Event()
+        self._dispatcher: Optional[threading.Thread] = None
 
     @classmethod
     def open(cls, root: Optional[Path] = None) -> "Lab":
@@ -71,6 +98,7 @@ class Lab:
             metrics=f"http://127.0.0.1:{p['metrics']}/metrics",
             loki=f"http://127.0.0.1:{p['loki']}",
             omlx=f"{omlx.base_url()}/admin",
+            comfy=comfy.base_url(),
         )
 
     def engines(self):
@@ -92,20 +120,28 @@ class Lab:
         omlx_detail = omlx_info.get("error") or (
             f"{omlx_info.get('default_model') or 'no model'} · {omlx_info.get('url')} · SSD cache {omlx_info.get('cache', {}).get('ssd_dir')}"
         )
+        try:
+            comfy_info = comfy.status()
+        except Exception as exc:
+            comfy_info = {"ready": False, "error": str(exc), "url": comfy.base_url()}
+        comfy_ready = bool(comfy_info.get("ready"))
+        comfy_detail = comfy_info.get("error") or (
+            f"{comfy_info.get('url')} · {len(comfy_info.get('workflows') or [])} workflow(s)"
+        )
         api_ok = occupancy.port_open(self.ports["lab_api"])
         console_ok = occupancy.port_open(self.ports["console"]) or occupancy.port_open(self.ports["lab_api"])
         venv = LTX_ROOT / ".venv/bin/python"
         weights_up = bool(distilled and distilled.ready)
         weights_detail = (distilled.blocked_reason if distilled else "engine list missing") or "Split 2.5 pack present"
         components = [
-            Component("docker", "Docker Desktop", "host", "up" if docker_ok else "down", True, "Required for ltx-obs", "Open Docker Desktop"),
-            Component("weights", "LTX-2 distilled weights", "weights", "up" if weights_up else "down", True, weights_detail, "Run ./setup-ltx-macos.sh"),
+            Component("weights", "LTX-2 distilled weights", "weights", "up" if weights_up else "down", True, weights_detail, "Run ./setup-ltx-macos.sh while online"),
             Component("venv", "LTX Python environment", "engine", "up" if venv.exists() else "down", True, str(venv), "cd LTX-2 && uv sync"),
             Component("lab-api", "Lab control plane", "control", "up" if api_ok else "down", True, f"127.0.0.1:{self.ports['lab_api']}", "Run ./labctl up"),
-            Component("console", "Carbon console", "control", "up" if console_ok else "down", True, self.links().console, "Run ./labctl up"),
-            Component("grafana", "Grafana (ltx-obs)", "observe", "up" if grafana_ok else "down", True, grafana_d, "Run ./labctl up"),
-            Component("prometheus", "Prometheus (ltx-obs)", "observe", "up" if prom_ok else "down", True, prom_d, "Run ./labctl up"),
-            Component("loki", "Loki (ltx-obs)", "observe", "up" if loki_ok else "down", False, loki_d, "Run ./labctl up"),
+            Component("console", "Lab console", "control", "up" if console_ok else "down", True, self.links().console, "Run ./labctl up"),
+            Component("docker", "Docker Desktop", "host", "up" if docker_ok else "down", False, "Optional for Grafana/Prometheus/Loki", "Open Docker Desktop when you want dashboards"),
+            Component("grafana", "Grafana (ltx-obs)", "observe", "up" if grafana_ok else "down", False, grafana_d, "Run ./labctl up while Docker is available"),
+            Component("prometheus", "Prometheus (ltx-obs)", "observe", "up" if prom_ok else "down", False, prom_d, "Run ./labctl up while Docker is available"),
+            Component("loki", "Loki (ltx-obs)", "observe", "up" if loki_ok else "down", False, loki_d, "Run ./labctl up while Docker is available"),
             Component("mlflow", "MLflow UI", "observe", "up" if mlflow_ok else "down", False, mlflow_d, "uv pip install mlflow in LTX-2 venv"),
             Component(
                 "omlx",
@@ -115,6 +151,15 @@ class Lab:
                 False,
                 omlx_detail,
                 "Open oMLX.app or run: omlx start",
+            ),
+            Component(
+                "comfyui",
+                "ComfyUI",
+                "engine",
+                "up" if comfy_ready else "down",
+                False,
+                comfy_detail,
+                f"Run ./labctl comfy start (listens on :{comfy.DEFAULT_PORT}; this lab already uses :8188)",
             ),
         ]
         required_down = [c for c in components if c.required and c.state != "up"]
@@ -133,6 +178,37 @@ class Lab:
             links=self.links(),
             engines=engines,
         )
+
+    def jobs(self) -> dict[str, Any]:
+        running = ledger.running_run()
+        if running:
+            running = self.get(running.id) or running
+        queued = [self._hydrate(run, persist=False) for run in ledger.queued_runs()]
+        storage = ledger.storage_snapshot(limit=12)
+        return {
+            "running": None if running is None else running.to_dict(),
+            "queued": [run.to_dict() for run in queued],
+            "queue_max": MAX_QUEUE,
+            "offline": {
+                "bound": "127.0.0.1",
+                "console": self.links().console,
+                "api": f"http://127.0.0.1:{self.ports['lab_api']}",
+                "requires_internet": False,
+            },
+            "storage": storage,
+        }
+
+    def storage(self) -> dict[str, Any]:
+        return ledger.storage_snapshot()
+
+    def delete_run(self, run_id: str) -> dict[str, Any]:
+        return ledger.delete_run(run_id)
+
+    def delete_pin(self, pin_id: str) -> dict[str, Any]:
+        return ledger.delete_pin(pin_id)
+
+    def reclaim(self, keep: int = 5, keep_pinned: bool = True) -> dict[str, Any]:
+        return ledger.reclaim(keep=keep, keep_pinned=keep_pinned)
 
     def metrics_text(self) -> str:
         def esc(value) -> str:
@@ -190,13 +266,54 @@ class Lab:
             raise EngineBlocked(profile.blocked_reason or f"{profile.label} is not ready")
         if profile.modality.value != "video":
             raise EngineBlocked(
-                f"{profile.label} rewrites prompts only. Generate video with LTX-2 Distilled, or use Rewrite with oMLX first."
+                f"{profile.label} rewrites prompts only. Generate video with LTX-2 Distilled or ComfyUI."
             )
-        busy = ledger.active_run()
-        if busy:
-            busy = self.get(busy.id) or busy
-            if not busy.is_terminal():
-                raise LabBusy(f"Run {busy.id} is {busy.state.value}")
+        if request.engine is not EngineId.comfyui:
+            python = LTX_ROOT / ".venv/bin/python"
+            if not python.exists():
+                raise OccupancyError(f"LTX venv missing at {python}")
+        with self._dispatch_lock:
+            waiting = ledger.queued_runs()
+            running = ledger.running_run()
+            if running:
+                running = self.get(running.id) or running
+                if running.is_terminal():
+                    running = None
+            if running and len(waiting) >= MAX_QUEUE:
+                raise LabBusy(f"Queue is full ({MAX_QUEUE}). Wait for a clip to finish or cancel one.")
+            run = self._enqueue(request, omlx_evidence=omlx_evidence)
+            if running:
+                return run
+            nxt = ledger.next_queued() or run
+            return self._launch(nxt)
+
+    def start_dispatcher(self) -> None:
+        if self._dispatcher and self._dispatcher.is_alive():
+            return
+        self._dispatch_stop.clear()
+        self._dispatcher = threading.Thread(target=self._dispatch_loop, name="ltx-dispatch", daemon=True)
+        self._dispatcher.start()
+
+    def _dispatch_loop(self) -> None:
+        while not self._dispatch_stop.wait(1.5):
+            try:
+                self.dispatch()
+            except Exception:
+                pass
+
+    def dispatch(self) -> Optional[Run]:
+        with self._dispatch_lock:
+            busy = ledger.running_run()
+            if busy:
+                busy = self.get(busy.id) or busy
+                if not busy.is_terminal():
+                    return None
+            nxt = ledger.next_queued()
+            if not nxt:
+                return None
+            return self._launch(nxt)
+
+    def _enqueue(self, request: GenerationRequest, omlx_evidence: Optional[dict[str, Any]] = None) -> Run:
         run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
         dest = ledger.run_dir(run_id)
         dest.mkdir(parents=True, exist_ok=True)
@@ -219,15 +336,24 @@ class Lab:
             "prompt": request.prompt,
             "engine": request.engine.value,
             "spec": request.spec.to_dict(),
+            "workflow": request.workflow,
             "output_path": str(dest / "output.mp4"),
             "mlflow_tracking_uri": f"sqlite:///{self.root / 'mlflow.db'}",
             "metrics_port": self.ports["metrics"],
         }, indent=2))
-        python = LTX_ROOT / ".venv/bin/python"
+        ledger.save_run(run)
+        return run
+
+    def _launch(self, run: Run) -> Run:
+        dest = ledger.run_dir(run.id)
+        if run.request.engine is EngineId.comfyui:
+            python = Path(sys.executable)
+        else:
+            python = LTX_ROOT / ".venv/bin/python"
         if not python.exists():
             raise OccupancyError(f"LTX venv missing at {python}")
         log_path = dest / "worker.log"
-        log_fh = open(log_path, "w")
+        log_fh = open(log_path, "a")
         env = os.environ.copy()
         env["PYTHONPATH"] = str(self.root)
         env["MLFLOW_TRACKING_URI"] = f"sqlite:///{self.root / 'mlflow.db'}"
@@ -235,6 +361,11 @@ class Lab:
         env["LTX_ROOT"] = str(LTX_ROOT)
         env["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
         env["PYTORCH_MPS_LOW_WATERMARK_RATIO"] = "0.0"
+        env["HF_HUB_OFFLINE"] = "1"
+        env["TRANSFORMERS_OFFLINE"] = "1"
+        env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+        env["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        env["DO_NOT_TRACK"] = "1"
         proc = subprocess.Popen(
             [str(python), "-m", "lab.worker", "--request", str(dest / "request.json")],
             cwd=str(self.root),
@@ -266,19 +397,25 @@ class Lab:
                 }
             )
         payload["prompt"] = request.prompt
+        ready = False
         try:
-            payload["snapshot"] = omlx.snapshot(
-                model=payload.get("model"),
-                prompt=str(payload.get("source_prompt") or request.prompt),
-                do_probe=True,
-            )
-            snap = payload["snapshot"] or {}
-            payload.setdefault("model", snap.get("model"))
-            payload.setdefault("cache", snap.get("cache"))
-            if snap.get("probe") and not payload.get("probe"):
-                payload["probe"] = snap.get("probe")
-        except Exception as exc:
-            payload["snapshot_error"] = str(exc)
+            ready = bool(omlx.status().get("ready"))
+        except Exception:
+            ready = False
+        if ready:
+            try:
+                payload["snapshot"] = omlx.snapshot(
+                    model=payload.get("model"),
+                    prompt=str(payload.get("source_prompt") or request.prompt),
+                    do_probe=False,
+                )
+                snap = payload["snapshot"] or {}
+                payload.setdefault("model", snap.get("model"))
+                payload.setdefault("cache", snap.get("cache"))
+                if snap.get("probe") and not payload.get("probe"):
+                    payload["probe"] = snap.get("probe")
+            except Exception as exc:
+                payload["snapshot_error"] = str(exc)
         try:
             (dest / "omlx.json").write_text(json.dumps(omlx.drop_secrets(payload), indent=2))
         except Exception:
@@ -328,11 +465,17 @@ class Lab:
             raise FileNotFoundError(run_id)
         if run.is_terminal():
             return run
+        if run.request.engine is EngineId.comfyui:
+            try:
+                comfy.interrupt()
+            except Exception:
+                pass
         if run.pid:
             _terminate_group(run.pid)
         run.state = RunState.cancelled
         run.finished_at = time.time()
         ledger.save_run(run)
+        self.dispatch()
         return run
 
     def pin(self, run_id: str, label: str):
@@ -352,6 +495,7 @@ class Lab:
         samples = _read_jsonl(dest / "samples.jsonl")
         omlx_pack = _read_json(dest / "omlx.json") or {}
         cache = _omlx_report(omlx_pack)
+        comfy_pack = _read_json(dest / "comfy.json") or {}
         grafana = self.links().grafana
         mlflow = self.links().mlflow
         spec = run.request.spec
@@ -400,6 +544,7 @@ class Lab:
                 "fps": spec.fps,
                 "seed": spec.seed,
                 "offload": spec.offload,
+                "workflow": run.request.workflow or (comfy_pack.get("workflow") if comfy_pack else None),
                 "started_at": run.started_at or run.created_at,
                 "finished_at": run.finished_at,
                 "duration_s": duration,
@@ -436,6 +581,7 @@ class Lab:
             },
             "host": host or None,
             "omlx": omlx_pack or None,
+            "comfy": comfy_pack or None,
             "cache": cache,
             "samples": samples,
             "charts": {
@@ -485,6 +631,9 @@ class Lab:
     def rewrite_prompt(self, prompt: str, model: Optional[str] = None) -> dict:
         return omlx.rewrite(prompt, model=model)
 
+    def comfy_status(self) -> dict:
+        return comfy.status()
+
     def actions(self) -> tuple[LabAction, ...]:
         return ACTIONS
 
@@ -508,9 +657,21 @@ class Lab:
                 code, log = 0, f"cancelled {busy.id}"
             else:
                 code, log = 0, "no active run"
+        elif action_id == "reclaim_runs":
+            result = self.reclaim(keep=5, keep_pinned=True)
+            code, log = 0, json.dumps(result, indent=2)
         elif action_id == "omlx_clear_cache":
             cleared = omlx.clear_cache()
             code, log = 0, json.dumps(cleared, indent=2)
+        elif action_id == "comfy_start":
+            try:
+                result = comfy.start()
+            except comfy.ComfyError as exc:
+                result = {"ok": False, "error": str(exc), "how": comfy.how_to_start()}
+            code, log = (0 if result.get("ok") else 1), json.dumps(result, indent=2)
+        elif action_id == "comfy_interrupt":
+            result = comfy.interrupt()
+            code, log = (0 if result.get("ok") else 1), json.dumps(result, indent=2)
         else:
             raise KeyError(action_id)
         return {"id": action_id, "exit_code": code, "log": log}
@@ -519,12 +680,20 @@ class Lab:
         occupancy.assert_band_free_or_self(self._lease)
         (self.root / ".lab").mkdir(parents=True, exist_ok=True)
         RUNS_DIR.mkdir(parents=True, exist_ok=True)
-        start_observability(self.ports)
-        start_mlflow(self.ports["mlflow"], self.root)
+        try:
+            start_observability(self.ports)
+        except Exception:
+            pass
+        try:
+            start_mlflow(self.ports["mlflow"], self.root)
+        except Exception:
+            pass
+        ensure_console_build()
         self._lease = occupancy.write_lease(self.ports, os.getpid())
         return self.readiness()
 
     def down(self) -> None:
+        self._dispatch_stop.set()
         busy = ledger.active_run()
         if busy and busy.pid:
             _terminate_group(busy.pid)
@@ -544,7 +713,12 @@ class Lab:
 
 
 def start_observability(ports: dict[str, int]) -> tuple[int, str]:
-    _cleanup_stale_ltx_containers()
+    if which("docker") is None:
+        return 1, "docker not found; dashboards skipped. Video generation still works."
+    try:
+        _cleanup_stale_ltx_containers()
+    except Exception as exc:
+        return 1, f"docker unreachable ({exc}); dashboards skipped"
     env = os.environ.copy()
     env.update({
         "GRAFANA_PORT": str(ports["grafana"]),
@@ -554,39 +728,75 @@ def start_observability(ports: dict[str, int]) -> tuple[int, str]:
         "OTEL_HTTP_PORT": str(ports["otel_http"]),
         "METRICS_PORT": str(ports["metrics"]),
     })
-    proc = subprocess.run(
-        ["docker", "compose", "-p", "ltx-obs", "up", "-d", "--remove-orphans"],
-        cwd=str(ROOT / "observability"),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["docker", "compose", "-p", "ltx-obs", "up", "-d", "--remove-orphans"],
+            cwd=str(ROOT / "observability"),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    except subprocess.TimeoutExpired:
+        return 1, "docker compose timed out; dashboards skipped. Lab stays local."
+    except FileNotFoundError:
+        return 1, "docker not found; dashboards skipped"
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
 def stop_observability() -> tuple[int, str]:
-    proc = subprocess.run(
-        ["docker", "compose", "-p", "ltx-obs", "down", "--remove-orphans"],
-        cwd=str(ROOT / "observability"),
-        capture_output=True,
-        text=True,
-    )
+    if which("docker") is None:
+        return 0, "docker not found"
+    try:
+        proc = subprocess.run(
+            ["docker", "compose", "-p", "ltx-obs", "down", "--remove-orphans"],
+            cwd=str(ROOT / "observability"),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return 1, str(exc)
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
 def _cleanup_stale_ltx_containers() -> None:
     """Remove leftover Created containers from the old project name/ports. Never touch infinia-*."""
+    if which("docker") is None:
+        return
     names = occupancy.docker_names()
     stale = [n for n in names if n.startswith("ltx-")]
     if not stale:
         return
-    subprocess.run(["docker", "rm", "-f", *stale], capture_output=True, text=True)
+    subprocess.run(["docker", "rm", "-f", *stale], capture_output=True, text=True, timeout=15)
     subprocess.run(
         ["docker", "compose", "-p", "observability", "down", "--remove-orphans"],
         cwd=str(ROOT / "observability"),
         capture_output=True,
         text=True,
+        timeout=20,
     )
+
+
+def ensure_console_build() -> bool:
+    index = CONSOLE_DIST / "index.html"
+    if index.exists():
+        return True
+    console = ROOT / "lab-console"
+    if not (console / "node_modules").exists():
+        return False
+    try:
+        subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(console),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return index.exists()
+    return index.exists()
 
 
 def start_mlflow(port: int, root: Path) -> None:

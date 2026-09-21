@@ -16,7 +16,8 @@ import GeneratePage from './components/GeneratePage';
 import ObservePage from './components/ObservePage';
 import LibraryPage from './components/LibraryPage';
 import OperationsPage from './components/OperationsPage';
-import { fetchLinks } from './api/lab';
+import JobDock from './components/JobDock';
+import { fetchJobs, fetchLinks } from './api/lab';
 
 const NAV = [
   { id: 'overview', label: 'Status' },
@@ -39,6 +40,7 @@ function parseRoute() {
 export default function App() {
   const [{ tab, runId }, setRoute] = useState(() => parseRoute());
   const [links, setLinks] = useState(null);
+  const [jobs, setJobs] = useState(null);
 
   const go = useCallback((nextTab, { runId: nextRun, replace } = {}) => {
     let hash = nextTab;
@@ -55,9 +57,13 @@ export default function App() {
     window.addEventListener('popstate', onHash);
     if (!window.location.hash) window.history.replaceState(null, '', '#overview');
     fetchLinks().then(setLinks).catch(() => setLinks(null));
+    const loadJobs = () => fetchJobs().then(setJobs).catch(() => {});
+    loadJobs();
+    const jobsTimer = setInterval(loadJobs, 2500);
     return () => {
       window.removeEventListener('hashchange', onHash);
       window.removeEventListener('popstate', onHash);
+      clearInterval(jobsTimer);
     };
   }, []);
 
@@ -93,6 +99,13 @@ export default function App() {
                 {item.label}
               </HeaderMenuItem>
             ))}
+            <HeaderMenuItem
+              href={links?.comfy || 'http://127.0.0.1:8189'}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              ComfyUI
+            </HeaderMenuItem>
           </HeaderNavigation>
           <HeaderGlobalBar>
             <HeaderGlobalAction
@@ -125,10 +138,15 @@ export default function App() {
             </HeaderGlobalAction>
           </HeaderGlobalBar>
         </Header>
+        <JobDock
+          jobs={jobs}
+          onOpenGenerate={() => go('generate')}
+          onOpenStorage={() => go('controls')}
+        />
         <Content className={`lab-console__main lab-console__main--${tab}`} id="main-content">
           {tab === 'overview' && <StatusPage onOpenGenerate={() => go('generate')} onOpenControls={() => go('controls')} />}
           <div hidden={tab !== 'generate'} aria-hidden={tab !== 'generate'}>
-            <GeneratePage onOpenObserve={(id) => go('observe', { runId: id })} />
+            <GeneratePage onOpenObserve={(id) => go('observe', { runId: id })} jobs={jobs} />
           </div>
           {tab === 'observe' && <ObservePage runId={runId} onSelectRun={(id) => go('observe', { runId: id, replace: true })} />}
           {tab === 'library' && <LibraryPage />}

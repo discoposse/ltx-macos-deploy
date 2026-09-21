@@ -34,12 +34,14 @@ On **Generate**, run one clip at a time. Defaults are a short proof (256×384, 9
 | Loki | 3200 |
 | MLflow | 5001 |
 | Worker metrics | 8001 |
+| oMLX (neighbor) | 8000 |
+| ComfyUI (neighbor) | 8189 |
 
-The lab will not bind a port that is already taken and will not `docker compose down` a foreign project. `./labctl down` stops only this lab.
+The lab will not bind a port that is already taken and will not `docker compose down` a foreign project. `./labctl down` stops only this lab. It never starts oMLX or ComfyUI.
 
 ## Engines
 
-**LTX-2 distilled** is the default video engine. **LTX-2 DFR** is available when the gated IC-LoRA is on disk; it is slower and hungrier than distilled, so keep the first clip on the 9-frame proof spec with disk offload. **oMLX** is a separate local LLM on `:8000`. Load the model and set SSD/hot cache in the oMLX admin, then use **Rewrite with oMLX** on Generate (or `./labctl omlx rewrite`). The next Report shows those cache paths. See [docs/OMLX.md](docs/OMLX.md). vLLM and SGLang are still detection-only.
+**LTX-2 distilled** is the default video engine. **LTX-2 DFR** is available when the gated IC-LoRA is on disk; it is slower and hungrier than distilled, so keep the first clip on the 9-frame proof spec with disk offload. **ComfyUI** is an optional local graph engine. Run `./labctl comfy start` (clones `~/Documents/ComfyUI` if needed and listens on `:8189`; this lab already owns `:8188`). Export the LTX graph with File → Export (API) into `workflows/comfy/`, then pick **ComfyUI (local graph)** on Generate. **oMLX** is a separate local LLM on `:8000`. Load the model and set SSD/hot cache in the oMLX admin, then use **Rewrite with oMLX** on Generate (or `./labctl omlx rewrite`). The next Report shows those cache paths. See [docs/OMLX.md](docs/OMLX.md). vLLM and SGLang are still detection-only.
 
 ## Layout
 
@@ -49,6 +51,7 @@ The lab will not bind a port that is already taken and will not `docker compose 
 - `LTX-2/` — vendor clone + weights (gitignored)
 - `runs/` — per-run mp4, log, status (gitignored)
 - `references/` — pinned proofs (gitignored)
+- `workflows/comfy/` — ComfyUI API-format exports (your JSON stays gitignored)
 
 ## License
 

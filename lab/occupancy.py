@@ -76,6 +76,14 @@ def neighbors() -> tuple[str, ...]:
         found.append("vllm :8100")
     if port_open(8000):
         found.append("omlx :8000")
+    from lab.comfy import CANDIDATE_PORTS
+
+    for port in CANDIDATE_PORTS:
+        if port == 8188:
+            continue
+        if port_open(port):
+            found.append(f"comfyui :{port}")
+            break
     return tuple(dict.fromkeys(found))
 
 
@@ -156,6 +164,15 @@ def detect_engines() -> list[EngineProfile]:
     except Exception as exc:
         omlx_ok, omlx_detail = False, str(exc)
     sglang_ok, sglang_detail = http_ok("http://127.0.0.1:30000/v1/models", timeout=0.4)
+    try:
+        from lab import comfy as comfy_client
+        comfy_info = comfy_client.status()
+        comfy_ok = bool(comfy_info.get("ready"))
+        comfy_detail = comfy_info.get("error") or (
+            f"{comfy_info.get('url')} · {len(comfy_info.get('workflows') or [])} workflow(s)"
+        )
+    except Exception as exc:
+        comfy_ok, comfy_detail = False, str(exc)
 
     engines = [
         EngineProfile(
@@ -199,6 +216,15 @@ def detect_engines() -> list[EngineProfile]:
             blocked_reason=None if sglang_ok else sglang_detail,
             bounds=None,
             default_spec=None,
+        ),
+        EngineProfile(
+            id=EngineId.comfyui,
+            label="ComfyUI (local graph)",
+            modality=Modality.video,
+            ready=comfy_ok,
+            blocked_reason=None if comfy_ok else (comfy_detail or "Run ./labctl comfy start"),
+            bounds=LTX_VIDEO_BOUNDS,
+            default_spec=DEFAULT_SPEC,
         ),
         EngineProfile(
             id=EngineId.omlx,

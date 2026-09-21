@@ -92,6 +92,16 @@ omlx start
 ./labctl omlx rewrite "a red hatchback on a coastal runway"
 ```
 
+## ComfyUI (optional video engine)
+
+ComfyUI is a separate checkout. This lab repo has no `main.py`. Start it on `:8189` so it does not collide with the Carbon console on `:8188`, export the graph with **File → Export (API)** into `workflows/comfy/`, then generate through the lab queue.
+
+```bash
+./labctl comfy start
+./labctl comfy
+./labctl generate --engine comfyui --workflow <name> --smoke --wait "a red hatchback on a coastal runway"
+```
+
 ## Stop
 
 ```bash

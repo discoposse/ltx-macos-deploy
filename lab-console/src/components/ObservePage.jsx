@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Dropdown, InlineNotification, Tag, Tile, CodeSnippet } from '@carbon/react';
-import { fetchObserve, fetchRuns, videoUrl } from '../api/lab';
+import { deleteRun, fetchObserve, fetchRuns, formatBytes, videoUrl } from '../api/lab';
 import { BarChart, LineChart } from './RunCharts';
 
 function fmtBytes(n) {
-  if (n == null || n === '') return '—';
-  const value = Number(n);
-  if (!Number.isFinite(value)) return '—';
-  if (value >= 1e9) return `${(value / 1e9).toFixed(1)} GB`;
-  if (value >= 1e6) return `${(value / 1e6).toFixed(1)} MB`;
-  if (value >= 1e3) return `${(value / 1e3).toFixed(1)} KB`;
-  return `${value} B`;
+  return formatBytes(n);
 }
 
 function fmtTime(ts) {
@@ -104,6 +98,7 @@ export default function ObservePage({ runId, onSelectRun }) {
   const probe = cache.probe || {};
   const stages = pack?.charts?.stages || selected?.trace?.stages || [];
   const links = pack?.links || {};
+  const comfy = pack?.comfy || {};
   const running = selected?.state === 'running' || selected?.state === 'queued';
 
   return (
@@ -138,6 +133,30 @@ export default function ObservePage({ runId, onSelectRun }) {
             <span>{pack?.identity?.spec}</span>
             <span>{pack?.identity?.engine}</span>
             <div className="observe-rail">
+              {selected.state !== 'running' && selected.state !== 'queued' && (
+                <Button
+                  kind="danger--ghost"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await deleteRun(selected.id);
+                      const data = await fetchRuns();
+                      const list = data.runs || [];
+                      setRuns(list);
+                      onSelectRun(list[0]?.id || null);
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                >
+                  Delete run
+                </Button>
+              )}
+              {links.comfy && (
+                <Button kind="ghost" size="sm" onClick={() => window.open(comfy.url || links.comfy, '_blank', 'noopener')}>
+                  ComfyUI
+                </Button>
+              )}
               {links.grafana_run && (
                 <Button kind="ghost" size="sm" onClick={() => window.open(links.grafana_run, '_blank', 'noopener')}>
                   Grafana
@@ -187,6 +206,7 @@ export default function ObservePage({ runId, onSelectRun }) {
                 ['Spec', job.height ? `${job.height}×${job.width}×${job.frames} @ ${job.fps} fps` : null],
                 ['Seed', job.seed],
                 ['Offload', job.offload],
+                ['Workflow', job.workflow],
                 ['Started', fmtTime(job.started_at)],
                 ['Finished', fmtTime(job.finished_at)],
                 ['Duration', fmtDuration(job.duration_s)],
@@ -219,6 +239,17 @@ export default function ObservePage({ runId, onSelectRun }) {
                 ['Load', software.load],
                 ['Offload', software.offload],
                 ['LTX tree', software.ltx_tree],
+              ]}
+            />
+            <Details
+              title="ComfyUI"
+              rows={[
+                ['URL', comfy.url],
+                ['Workflow', comfy.workflow],
+                ['Prompt id', comfy.prompt_id],
+                ['Prefix', comfy.prefix],
+                ['Artifact', comfy.artifact?.filename],
+                ['Bytes', comfy.bytes != null ? fmtBytes(comfy.bytes) : null],
               ]}
             />
             <Details

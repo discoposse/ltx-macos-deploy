@@ -24,6 +24,65 @@ STAGES = (
 )
 
 
+def _run_comfy(payload, dest, start_stage, end_stage, log, flush, started, observer) -> int:
+    from lab.comfy import run_job
+    from lab.hostinfo import capture_host
+    from lab.types import VideoSpec
+
+    spec = payload.get("spec") or {}
+    output_path = Path(payload["output_path"])
+    current = {"name": "load"}
+
+    def on_stage(name: str) -> None:
+        if current["name"] != name:
+            end_stage(current["name"])
+            current["name"] = name
+            start_stage(name)
+
+    start_stage("load")
+    try:
+        host = capture_host(payload.get("engine") or "comfyui", spec, f"comfyui-{payload.get('workflow') or 'default'}")
+        (dest / "host.json").write_text(json.dumps(host, indent=2))
+    except Exception as exc:
+        log(f"host snapshot skipped: {exc}")
+    log(f"ComfyUI workflow={payload.get('workflow') or 'default'}")
+    pack = run_job(
+        prompt=payload["prompt"],
+        spec=VideoSpec.from_dict(spec),
+        dest=dest,
+        workflow=payload.get("workflow"),
+        run_id=payload["run_id"],
+        log=log,
+        on_stage=on_stage,
+    )
+    end_stage(current["name"])
+    digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    duration = time.time() - started
+    log(f"END run_id={payload['run_id']} video={output_path} bytes={output_path.stat().st_size} duration={duration:.1f}s comfy={pack.get('prompt_id')}")
+    if observer:
+        try:
+            observer.end_run(str(output_path), success=True, extra_metrics={"total_duration": duration})
+        except Exception:
+            pass
+    try:
+        import mlflow
+        if mlflow.active_run():
+            mlflow.log_params({"workflow": pack.get("workflow") or "", "comfy_prompt_id": pack.get("prompt_id") or ""})
+            if output_path.exists():
+                mlflow.log_artifact(str(output_path), artifact_path="video")
+            mlflow.set_tag("status", "succeeded")
+            mlflow.end_run()
+    except Exception:
+        pass
+    flush(
+        state="succeeded",
+        finished_at=time.time(),
+        sha256=digest,
+        metrics={"duration_s": duration, "comfy_prompt_id": pack.get("prompt_id")},
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", required=True)
@@ -40,7 +99,10 @@ def main() -> int:
 
     engine = payload.get("engine") or "ltx-distilled"
     spec = payload.get("spec") or {}
-    load_name = "ltx-2.5-22b-dfr" if engine == "ltx-dfr" else "ltx-2.5-22b-distilled"
+    load_name = {
+        "ltx-dfr": "ltx-2.5-22b-dfr",
+        "comfyui": f"comfyui-{payload.get('workflow') or 'default'}",
+    }.get(engine, "ltx-2.5-22b-distilled")
     mlflow_run_id = None
     mlflow_experiment_id = None
     observer = None
@@ -111,6 +173,10 @@ def main() -> int:
         f"START run_id={run_id} engine={payload.get('engine')} "
         f"spec={payload.get('spec')} offload={payload.get('spec', {}).get('offload')}"
     )
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    os.environ.setdefault("DO_NOT_TRACK", "1")
     os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
     os.environ.setdefault("PYTORCH_MPS_LOW_WATERMARK_RATIO", "0.0")
 
@@ -182,6 +248,9 @@ def main() -> int:
             observer.start_run(payload.get("prompt") or "", engine, spec)
         except Exception as exc:
             log(f"observer unavailable: {exc}")
+
+        if engine == "comfyui":
+            return _run_comfy(payload, dest, start_stage, end_stage, log, flush, started, observer)
 
         start_stage("load")
         import torch

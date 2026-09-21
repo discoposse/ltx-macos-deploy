@@ -66,14 +66,16 @@ def load_run(run_id: str) -> Optional[Run]:
         return None
 
 
-def list_runs(limit: int = 40) -> list[Run]:
+def list_run_ids() -> list[str]:
     if not RUNS_DIR.exists():
         return []
+    return [child.name for child in sorted(RUNS_DIR.iterdir(), reverse=True) if child.is_dir()]
+
+
+def list_runs(limit: int = 40) -> list[Run]:
     runs: list[Run] = []
-    for child in sorted(RUNS_DIR.iterdir(), reverse=True):
-        if not child.is_dir():
-            continue
-        run = load_run(child.name)
+    for run_id in list_run_ids():
+        run = load_run(run_id)
         if run:
             runs.append(run)
         if len(runs) >= limit:
@@ -81,11 +83,26 @@ def list_runs(limit: int = 40) -> list[Run]:
     return runs
 
 
-def active_run() -> Optional[Run]:
-    for run in list_runs(80):
-        if run.state in {RunState.queued, RunState.running}:
+def running_run() -> Optional[Run]:
+    for run in list_runs(200):
+        if run.state == RunState.running:
             return run
     return None
+
+
+def queued_runs() -> list[Run]:
+    queued = [run for run in list_runs(200) if run.state == RunState.queued]
+    queued.sort(key=lambda run: run.created_at)
+    return queued
+
+
+def next_queued() -> Optional[Run]:
+    waiting = queued_runs()
+    return waiting[0] if waiting else None
+
+
+def active_run() -> Optional[Run]:
+    return running_run() or next_queued()
 
 
 def run_from_dict(data: dict) -> Run:
@@ -216,5 +233,128 @@ def list_pins() -> list[dict]:
     for child in sorted(REFS_DIR.iterdir(), reverse=True):
         pin_path = child / "pin.json"
         if pin_path.exists():
-            pins.append(json.loads(pin_path.read_text()))
+            pin = json.loads(pin_path.read_text())
+            pin["bytes"] = dir_size(child)
+            pins.append(pin)
     return pins
+
+
+def _safe_id(value: str, kind: str = "id") -> str:
+    text = str(value or "").strip()
+    if not text or text in {".", ".."} or "/" in text or "\\" in text:
+        raise ValueError(f"invalid {kind}")
+    return text
+
+
+def dir_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += (Path(root) / name).stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def run_bytes(run_id: str) -> int:
+    return dir_size(run_dir(run_id))
+
+
+def storage_snapshot(limit: int = 80) -> dict:
+    runs_payload = []
+    runs_bytes = 0
+    for run_id in list_run_ids():
+        size = run_bytes(run_id)
+        runs_bytes += size
+        run = load_run(run_id)
+        if run is None:
+            continue
+        prompt = run.request.prompt.strip().replace("\n", " ")
+        runs_payload.append(
+            {
+                "id": run.id,
+                "state": run.state.value,
+                "pinned": run.pinned,
+                "bytes": size,
+                "created_at": run.created_at,
+                "finished_at": run.finished_at,
+                "prompt": prompt[:160],
+            }
+        )
+    refs_bytes = dir_size(REFS_DIR) if REFS_DIR.exists() else 0
+    return {
+        "runs_bytes": runs_bytes,
+        "references_bytes": refs_bytes,
+        "total_bytes": runs_bytes + refs_bytes,
+        "run_count": len(runs_payload),
+        "pin_count": len(list_pins()) if REFS_DIR.exists() else 0,
+        "runs": runs_payload[:limit],
+    }
+
+
+def delete_run(run_id: str) -> dict:
+    run_id = _safe_id(run_id, "run id")
+    run = load_run(run_id)
+    if run and not run.is_terminal():
+        raise ValueError(f"Cannot delete an active run ({run.state.value})")
+    dest = run_dir(run_id)
+    if not dest.exists():
+        raise FileNotFoundError(run_id)
+    freed = dir_size(dest)
+    shutil.rmtree(dest)
+    return {"id": run_id, "bytes": freed, "kind": "run"}
+
+
+def delete_pin(pin_id: str) -> dict:
+    pin_id = _safe_id(pin_id, "pin id")
+    dest = REFS_DIR / pin_id
+    pin_path = dest / "pin.json"
+    if not dest.exists() or not pin_path.exists():
+        raise FileNotFoundError(pin_id)
+    pin = json.loads(pin_path.read_text())
+    run_id = pin.get("run_id")
+    freed = dir_size(dest)
+    shutil.rmtree(dest)
+    if run_id:
+        run = load_run(run_id)
+        if run and run.pinned:
+            run.pinned = False
+            save_run(run)
+    return {"id": pin_id, "bytes": freed, "kind": "reference", "run_id": run_id}
+
+
+def reclaim(*, keep: int = 5, keep_pinned: bool = True) -> dict:
+    if keep < 0:
+        raise ValueError("keep must be >= 0")
+    runs = [run for run in (load_run(run_id) for run_id in list_run_ids()) if run]
+    runs.sort(key=lambda run: run.created_at, reverse=True)
+    kept: list[str] = []
+    deleted: list[dict] = []
+    skipped: list[dict] = []
+    kept_count = 0
+    for run in runs:
+        if not run.is_terminal():
+            skipped.append({"id": run.id, "reason": "active"})
+            continue
+        if keep_pinned and run.pinned:
+            skipped.append({"id": run.id, "reason": "pinned"})
+            continue
+        if kept_count < keep:
+            kept.append(run.id)
+            kept_count += 1
+            continue
+        deleted.append(delete_run(run.id))
+    return {
+        "keep": keep,
+        "keep_pinned": keep_pinned,
+        "kept": kept,
+        "deleted": deleted,
+        "skipped": skipped,
+        "freed_bytes": sum(item["bytes"] for item in deleted),
+        "deleted_count": len(deleted),
+    }

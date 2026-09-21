@@ -12,6 +12,7 @@ class EngineId(str, Enum):
     vllm = "vllm"
     sglang = "sglang"
     omlx = "omlx"
+    comfyui = "comfyui"
 
 
 class Modality(str, Enum):
@@ -138,6 +139,7 @@ class GenerationRequest:
     engine: EngineId
     spec: VideoSpec
     label: Optional[str] = None
+    workflow: Optional[str] = None
 
     def __post_init__(self) -> None:
         _require(bool(self.prompt.strip()), "prompt is required")
@@ -149,6 +151,7 @@ class GenerationRequest:
             "engine": self.engine.value,
             "spec": self.spec.to_dict(),
             "label": self.label,
+            "workflow": self.workflow,
         }
 
     @classmethod
@@ -159,6 +162,7 @@ class GenerationRequest:
             engine=EngineId(engine),
             spec=VideoSpec.from_dict(data.get("spec") or data),
             label=data.get("label"),
+            workflow=str(data["workflow"]) if data.get("workflow") else None,
         )
 
 
@@ -316,6 +320,7 @@ class LabLinks:
     metrics: str
     loki: str
     omlx: str = "http://127.0.0.1:8000/admin"
+    comfy: str = "http://127.0.0.1:8189"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -382,6 +387,7 @@ RUNS_DIR = ROOT / "runs"
 REFS_DIR = ROOT / "references"
 LEASE_PATH = ROOT / ".lab" / "lease.json"
 PIDS_PATH = ROOT / ".lab" / "pids.json"
+CONSOLE_DIST = ROOT / "lab-console" / "dist"
 
 LTX_BAND = {
     "lab_api": 8199,
@@ -424,3 +430,6 @@ DEFAULT_PROMPT = (
     "A red hatchback dropped from a helicopter onto a windy coastal runway, "
     "cinematic lighting, shallow depth of field, 24fps"
 )
+
+# Queued generations waiting behind the current worker. One worker at a time.
+MAX_QUEUE = 8

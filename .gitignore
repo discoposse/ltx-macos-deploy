@@ -16,6 +16,8 @@ prompts/*.txt
 prompts/*.sh
 custom_*.sh
 my-*.sh
+workflows/comfy/*.json
+!workflows/comfy/.gitkeep
 
 # Virtual environment
 .venv/

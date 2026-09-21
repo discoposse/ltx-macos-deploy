@@ -80,6 +80,10 @@ export async function fetchOmlx() {
   return labFetch('/api/omlx');
 }
 
+export async function fetchComfy() {
+  return labFetch('/api/comfy');
+}
+
 export async function fetchOmlxSnapshot(prompt, model) {
   const params = new URLSearchParams();
   if (prompt) params.set('prompt', prompt);
@@ -96,10 +100,44 @@ export async function rewritePrompt(prompt, model) {
   });
 }
 
+export async function fetchJobs() {
+  return labFetch('/api/jobs');
+}
+
+export async function fetchStorage() {
+  return labFetch('/api/storage');
+}
+
+export async function deleteRun(id) {
+  return labFetch(`/api/runs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function deleteReference(id) {
+  return labFetch(`/api/references/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function reclaimStorage({ keep = 5, keepPinned = true } = {}) {
+  return labFetch('/api/storage/reclaim', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ keep, keep_pinned: keepPinned }),
+  });
+}
+
 export function videoUrl(runId) {
   return `/api/runs/${encodeURIComponent(runId)}/video`;
 }
 
 export function referenceVideoUrl(pinId) {
   return `/api/references/${encodeURIComponent(pinId)}/video`;
+}
+
+export function formatBytes(n) {
+  if (n == null || n === '') return '—';
+  const value = Number(n);
+  if (!Number.isFinite(value)) return '—';
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)} GB`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)} MB`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)} KB`;
+  return `${value} B`;
 }

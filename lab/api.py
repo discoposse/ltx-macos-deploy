@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 from lab.runtime import Lab, _write_pid
 from lab.types import (
     ROOT,
+    CONSOLE_DIST,
     EngineBlocked,
     GenerationRequest,
     LabBusy,
@@ -18,8 +19,6 @@ from lab.types import (
     SpecError,
 )
 from lab.omlx import OmlxError
-
-CONSOLE_DIST = ROOT / "lab-console" / "dist"
 
 
 def make_handler(lab: Lab):
@@ -32,7 +31,7 @@ def make_handler(lab: Lab):
         def _cors(self) -> None:
             origin = self.headers.get("Origin", "http://127.0.0.1:8188")
             self.send_header("Access-Control-Allow-Origin", origin)
-            self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Cache-Control", "no-store")
 
@@ -95,6 +94,12 @@ def make_handler(lab: Lab):
                 except Exception as exc:
                     self._json(500, {"error": str(exc)})
                 return
+            if path == "/api/comfy":
+                try:
+                    self._json(200, lab.comfy_status())
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
             if path == "/api/omlx/snapshot":
                 try:
                     prompt = (qs.get("prompt") or [None])[0]
@@ -113,6 +118,18 @@ def make_handler(lab: Lab):
                 return
             if path == "/api/actions":
                 self._json(200, {"actions": [a.to_dict() for a in lab.actions()]})
+                return
+            if path == "/api/jobs":
+                try:
+                    self._json(200, lab.jobs())
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
+            if path == "/api/storage":
+                try:
+                    self._json(200, lab.storage())
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
                 return
             if path == "/api/runs":
                 try:
@@ -206,6 +223,12 @@ def make_handler(lab: Lab):
                 except Exception as exc:
                     self._json(500, {"error": str(exc)})
                 return
+            if path == "/api/comfy/interrupt":
+                try:
+                    self._json(200, lab.start_action("comfy_interrupt", confirm=True))
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
             if path == "/api/generate":
                 try:
                     request = GenerationRequest.from_dict(body)
@@ -228,6 +251,16 @@ def make_handler(lab: Lab):
                 except FileNotFoundError:
                     self._json(404, {"error": "run not found"})
                 return
+            if path == "/api/storage/reclaim":
+                try:
+                    keep = int(body.get("keep", 5))
+                    keep_pinned = bool(body.get("keep_pinned", True))
+                    self._json(200, lab.reclaim(keep=keep, keep_pinned=keep_pinned))
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
+                except Exception as exc:
+                    self._json(500, {"error": str(exc)})
+                return
             if path.startswith("/api/runs/") and path.endswith("/pin"):
                 run_id = path.split("/")[3]
                 label = str(body.get("label") or "reference")
@@ -246,6 +279,38 @@ def make_handler(lab: Lab):
                     self._json(400, {"error": str(exc), "confirm_required": True})
                 except KeyError:
                     self._json(404, {"error": "unknown action"})
+                return
+            self._json(404, {"error": "not found"})
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            try:
+                self._do_DELETE()
+            except Exception as exc:
+                try:
+                    self._json(500, {"error": str(exc)})
+                except Exception:
+                    pass
+
+        def _do_DELETE(self) -> None:
+            parsed = urlparse(self.path)
+            path = parsed.path
+            if path.startswith("/api/runs/") and path.count("/") == 3:
+                run_id = path.split("/")[3]
+                try:
+                    self._json(200, lab.delete_run(run_id))
+                except FileNotFoundError:
+                    self._json(404, {"error": "run not found"})
+                except ValueError as exc:
+                    self._json(409, {"error": str(exc)})
+                return
+            if path.startswith("/api/references/") and path.count("/") == 3:
+                pin_id = path.split("/")[3]
+                try:
+                    self._json(200, lab.delete_pin(pin_id))
+                except FileNotFoundError:
+                    self._json(404, {"error": "reference not found"})
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
                 return
             self._json(404, {"error": "not found"})
 
@@ -268,9 +333,24 @@ def make_handler(lab: Lab):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8199) -> None:
+    import threading
+
+    from lab.types import LTX_BAND
+
     lab = Lab.open()
-    httpd = ThreadingHTTPServer((host, port), make_handler(lab))
+    lab.start_dispatcher()
+    handler = make_handler(lab)
+    httpd = ThreadingHTTPServer((host, port), handler)
     _write_pid("api", os.getpid())
+    console_port = LTX_BAND["console"]
+    if console_port != port:
+        try:
+            console = ThreadingHTTPServer((host, console_port), handler)
+            threading.Thread(target=console.serve_forever, name="ltx-console", daemon=True).start()
+            _write_pid("console", os.getpid())
+            print(f"LTX lab console on http://{host}:{console_port}", flush=True)
+        except OSError as exc:
+            print(f"Console port {console_port} unavailable ({exc}); API still on :{port}", flush=True)
     print(f"LTX lab API on http://{host}:{port}", flush=True)
     httpd.serve_forever()
 

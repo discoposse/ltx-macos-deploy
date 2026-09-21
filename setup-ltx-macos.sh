@@ -55,6 +55,10 @@ echo "Installing lab tracing extras into the LTX venv..."
 uv pip install --python .venv/bin/python mlflow prometheus_client
 
 cd ..
+if [ -d "lab-console" ]; then
+  echo "Building the local console so the lab can run with Wi-Fi off..."
+  (cd lab-console && npm install && npm run build)
+fi
 chmod +x labctl start-lab.sh stop-lab.sh generate_macos.sh dfr_generate_macos.sh
 
 echo ""

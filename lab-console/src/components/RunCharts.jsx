@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-const PALETTE = ['#0f62fe', '#24a148', '#8a3ffc', '#1192e8', '#fa4d56'];
+const PALETTE = ['#7594b2', '#3d9b6a', '#d98878', '#ed2738', '#bdd6e7'];
 
 function extent(values, fallback = 1) {
   const nums = values.filter((v) => typeof v === 'number' && Number.isFinite(v));
