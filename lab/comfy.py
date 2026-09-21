@@ -844,8 +844,18 @@ def status() -> dict[str, Any]:
     }
 
 
+def canonical_job_id(value: str) -> str:
+    """Comfy 0.37+ requires a lowercase hyphenated UUID, not uuid4().hex."""
+    try:
+        cooked = str(uuid.UUID(str(value)))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ComfyError("prompt_id must be a valid UUID") from exc
+    return cooked
+
+
 def queue_prompt(graph: dict[str, Any], *, client_id: str, prompt_id: str) -> str:
     url = base_url()
+    prompt_id = canonical_job_id(prompt_id)
     payload = {"prompt": graph, "client_id": client_id, "prompt_id": prompt_id}
     code, body = _json(f"{url}/prompt", method="POST", body=payload, timeout=10)
     if code != 200 or not isinstance(body, dict):
@@ -971,8 +981,8 @@ def run_job(
     params = flatten_graph_params(filled)
     (dest / "comfy.workflow.json").write_text(json.dumps(filled, indent=2))
     (dest / "comfy.params.json").write_text(json.dumps(params, indent=2))
-    client_id = uuid.uuid4().hex
-    prompt_id = uuid.uuid4().hex
+    client_id = str(uuid.uuid4())
+    prompt_id = str(uuid.uuid4())
     if on_stage:
         on_stage("encode")
     queued_id = queue_prompt(filled, client_id=client_id, prompt_id=prompt_id)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -49,6 +50,24 @@ class ComfyGraphTests(unittest.TestCase):
         self.assertFalse(comfy.looks_like_comfy("<!doctype html>"))
         self.assertFalse(comfy.looks_like_comfy({"ok": True}))
         self.assertFalse(comfy.looks_like_comfy({"system": "up"}))
+
+    def test_queue_prompt_sends_canonical_hyphenated_uuid(self) -> None:
+        sent: dict = {}
+
+        def fake_json(url, method="GET", body=None, timeout=1.0):
+            sent["body"] = body
+            return 200, {"prompt_id": body["prompt_id"]}
+
+        hex_id = uuid.uuid4().hex
+        self.assertNotIn("-", hex_id)
+        with patch.object(comfy, "_json", side_effect=fake_json), patch.object(
+            comfy, "base_url", return_value="http://127.0.0.1:8189"
+        ):
+            queued = comfy.queue_prompt({"1": {"class_type": "NoOp", "inputs": {}}}, client_id="lab", prompt_id=hex_id)
+        canonical = str(uuid.UUID(hex_id))
+        self.assertEqual(sent["body"]["prompt_id"], canonical)
+        self.assertEqual(queued, canonical)
+        self.assertEqual(str(uuid.UUID(queued)), queued)
 
     def test_as_api_graph_unwraps_prompt_and_rejects_ui_export(self) -> None:
         graph = _graph()
