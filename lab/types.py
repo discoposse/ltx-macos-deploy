@@ -107,6 +107,39 @@ class VideoSpec:
             offload=str(data.get("offload", "cpu")),
         )
 
+    @classmethod
+    def capture(
+        cls,
+        height: Any = None,
+        width: Any = None,
+        frames: Any = None,
+        fps: Any = None,
+        seed: Any = None,
+        offload: Any = None,
+    ) -> "VideoSpec":
+        """Best-effort spec from a Comfy graph (may snap to LTX-legal multiples)."""
+
+        def _int(value: Any, fallback: int) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        h = max(64, _int(height, 256))
+        h -= h % 64
+        w = max(64, _int(width, 384))
+        w -= w % 64
+        f = _int(frames, 9)
+        if f < 9:
+            f = 9
+        else:
+            f = 1 + 8 * max(1, round((f - 1) / 8.0))
+        rate = max(1, _int(fps, 24))
+        mode = str(offload or "disk")
+        if mode not in {"cpu", "none", "disk"}:
+            mode = "disk"
+        return cls(h, w, f, rate, _int(seed, 42), mode)
+
 
 PROOF_SPEC = VideoSpec(height=256, width=384, frames=9, fps=24, seed=42, offload="disk")
 DEFAULT_SPEC = VideoSpec(height=256, width=384, frames=9, fps=24, seed=42, offload="disk")

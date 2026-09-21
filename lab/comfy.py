@@ -665,6 +665,111 @@ def execution_trace(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def graph_from_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    prompt = entry.get("prompt")
+    if isinstance(prompt, list) and len(prompt) >= 3 and isinstance(prompt[2], dict):
+        return prompt[2]
+    if isinstance(prompt, dict) and prompt:
+        sample = next(iter(prompt.values()))
+        if isinstance(sample, dict) and "class_type" in sample:
+            return prompt
+    return {}
+
+
+def lab_owned_graph(graph: dict[str, Any]) -> bool:
+    for node in graph.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        prefix = str(inputs.get("filename_prefix") or "")
+        if prefix.startswith("ltx-lab/"):
+            return True
+    return False
+
+
+def prompt_from_graph(graph: dict[str, Any]) -> str:
+    for node in graph.values():
+        if not isinstance(node, dict) or _is_negative(node, ""):
+            continue
+        if not _is_clip_like(node):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key in PROMPT_KEYS:
+            value = inputs.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:4000]
+    return "ComfyUI queue"
+
+
+def _param_int(params: dict[str, Any], suffixes: tuple[str, ...], default: int) -> int:
+    for key, value in params.items():
+        lower = str(key).lower()
+        if any(lower.endswith("_" + suffix) or lower == suffix for suffix in suffixes):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+    return default
+
+
+def spec_from_graph(graph: dict[str, Any]) -> VideoSpec:
+    params = flatten_graph_params(graph) if graph else {}
+    return VideoSpec.capture(
+        height=_param_int(params, ("height", "image_height"), 256),
+        width=_param_int(params, ("width", "image_width"), 384),
+        frames=_param_int(params, ("length", "num_frames", "frame_count", "frames"), 9),
+        fps=_param_int(params, ("frame_rate", "fps", "framerate"), 24),
+        seed=_param_int(params, ("seed", "noise_seed"), 42),
+        offload="disk",
+    )
+
+
+def history_all() -> dict[str, Any]:
+    url = discover() or base_url()
+    try:
+        code, body = _json(f"{url}/history", timeout=8)
+    except ComfyError:
+        return {}
+    if code != 200 or not isinstance(body, dict):
+        return {}
+    return body
+
+
+def list_finished_jobs(limit: int = 40, history_blob: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
+    """Completed Comfy executions that produced a video (Queue Prompt or lab)."""
+    blob = history_all() if history_blob is None else history_blob
+    jobs: list[dict[str, Any]] = []
+    for prompt_id, entry in blob.items():
+        if not isinstance(entry, dict):
+            continue
+        files = _output_files(entry)
+        video = next((item for item in files if Path(item["filename"]).suffix.lower() in VIDEO_SUFFIXES), None)
+        if video is None:
+            continue
+        graph = graph_from_history_entry(entry)
+        trace = execution_trace(entry)
+        jobs.append(
+            {
+                "prompt_id": str(prompt_id),
+                "graph": graph,
+                "video": video,
+                "trace": trace,
+                "params": flatten_graph_params(graph) if graph else {},
+                "prompt": prompt_from_graph(graph) if graph else "ComfyUI queue",
+                "spec": spec_from_graph(graph).to_dict() if graph else VideoSpec.capture().to_dict(),
+                "lab_owned": lab_owned_graph(graph) if graph else False,
+                "started_at": trace.get("start_ts"),
+                "finished_at": trace.get("end_ts"),
+            }
+        )
+    jobs.sort(key=lambda row: float(row.get("finished_at") or row.get("started_at") or 0), reverse=True)
+    return jobs[:limit]
+
+
 def _models(url: str, kind: str) -> list[str]:
     try:
         code, body = _json(f"{url}/models/{kind}", timeout=1.2)

@@ -189,6 +189,48 @@ class ComfyGraphTests(unittest.TestCase):
         self.assertEqual(by_node["10"], 2.0)
         self.assertEqual(by_node["20"], 2.5)
 
+    def test_list_finished_jobs_skips_lab_prefix_and_needs_video(self) -> None:
+        graph = _graph()
+        graph["5"]["inputs"]["filename_prefix"] = "ComfyUI"
+        lab_graph = _graph()
+        lab_graph["5"]["inputs"]["filename_prefix"] = "ltx-lab/20260921-test"
+        blob = {
+            "aaa": {
+                "prompt": [1, "aaa", graph, {}, []],
+                "outputs": {
+                    "9": {"gifs": [{"filename": "clip.mp4", "subfolder": "", "type": "output"}]}
+                },
+                "status": {
+                    "status_str": "success",
+                    "completed": True,
+                    "messages": [
+                        ["execution_start", {"timestamp": 100.0}],
+                        ["execution_success", {"timestamp": 110.0}],
+                    ],
+                },
+            },
+            "bbb": {
+                "prompt": [2, "bbb", lab_graph, {}, []],
+                "outputs": {
+                    "9": {"gifs": [{"filename": "lab.mp4", "subfolder": "", "type": "output"}]}
+                },
+                "status": {"status_str": "success", "completed": True, "messages": []},
+            },
+            "ccc": {
+                "prompt": [3, "ccc", graph, {}, []],
+                "outputs": {"9": {"images": [{"filename": "still.png", "type": "output"}]}},
+                "status": {"status_str": "success", "completed": True, "messages": []},
+            },
+        }
+        jobs = comfy.list_finished_jobs(history_blob=blob)
+        by_id = {job["prompt_id"]: job for job in jobs}
+        self.assertIn("aaa", by_id)
+        self.assertIn("bbb", by_id)
+        self.assertNotIn("ccc", by_id)
+        self.assertFalse(by_id["aaa"]["lab_owned"])
+        self.assertTrue(by_id["bbb"]["lab_owned"])
+        self.assertEqual(by_id["aaa"]["trace"]["duration_s"], 10.0)
+
 
 class ObserveCompareTests(unittest.TestCase):
     def test_compare_observe_packs_flags_faster_and_param_diff(self) -> None:

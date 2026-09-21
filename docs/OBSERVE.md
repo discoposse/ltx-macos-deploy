@@ -34,7 +34,7 @@ Load name is `ltx-2.5-22b-distilled`. Memory and CPU gauges are process-wide; pi
 
 The report reads these files from the ledger, so it still works if Grafana or the worker process is down. Grafana iframes are extra, for the same window.
 
-ComfyUI generations use the same worker, Prometheus observer, MLflow experiment `ltx-lab`, and Report page. Graph parameters and node timings are MLflow params/metrics plus `comfy/` artifacts. On Report, pick **Compare B** to diff two sessions (wall time, size, changed node inputs). MLflow can compare the same two `run_id`s.
+ComfyUI generations use the same worker, Prometheus observer, MLflow experiment `ltx-lab`, and Report page when you queue from **Generate**. **Queue Prompt inside ComfyUI** is imported into Report the next time the session list refreshes (finished mp4/webm only; those runs are tagged workflow `comfy-queue`). Graph parameters and node timings are MLflow params/metrics plus `comfy/` artifacts. On Report, pick **Compare B** to diff two sessions (wall time, size, changed node inputs). MLflow can compare the same two `run_id`s.
 
 ## Grafana / Prometheus
 

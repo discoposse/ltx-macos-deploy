@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -24,6 +25,7 @@ from lab.types import (
     ROOT,
     RUNS_DIR,
     Component,
+    Artifact,
     EngineBlocked,
     EngineId,
     GenerationRequest,
@@ -37,6 +39,7 @@ from lab.types import (
     Run,
     RunState,
     RunTrace,
+    VideoSpec,
 )
 
 
@@ -83,6 +86,8 @@ class Lab:
         self._dispatch_lock = threading.Lock()
         self._dispatch_stop = threading.Event()
         self._dispatcher: Optional[threading.Thread] = None
+        self._comfy_sync_at = 0.0
+        self._comfy_sync_lock = threading.Lock()
 
     @classmethod
     def open(cls, root: Optional[Path] = None) -> "Lab":
@@ -440,7 +445,115 @@ class Lab:
         return self._hydrate(run, persist=True)
 
     def list_runs(self, limit: int = 40) -> list[Run]:
+        try:
+            self.sync_comfy_runs()
+        except Exception:
+            pass
         return [self._hydrate(r, persist=False) for r in ledger.list_runs(limit)]
+
+    def sync_comfy_runs(self) -> dict[str, Any]:
+        """Copy finished Comfy Queue Prompt clips into the lab ledger for Report."""
+        now = time.monotonic()
+        with self._comfy_sync_lock:
+            if now - self._comfy_sync_at < 8:
+                return {"imported": [], "skipped": True}
+            self._comfy_sync_at = now
+        known = _known_comfy_prompt_ids()
+        imported: list[str] = []
+        for job in comfy.list_finished_jobs(40):
+            prompt_id = str(job.get("prompt_id") or "")
+            if not prompt_id or prompt_id in known or job.get("lab_owned"):
+                continue
+            try:
+                run = self._import_comfy_job(job)
+            except Exception:
+                continue
+            known.add(prompt_id)
+            imported.append(run.id)
+            if len(imported) >= 5:
+                break
+        return {"imported": imported}
+
+    def _import_comfy_job(self, job: dict[str, Any]) -> Run:
+        prompt_id = str(job["prompt_id"])
+        started = float(job.get("started_at") or time.time())
+        finished = float(job.get("finished_at") or started)
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
+        run_id = f"{stamp}-c{prompt_id.replace('-', '')[:8]}"
+        dest = ledger.run_dir(run_id)
+        dest.mkdir(parents=True, exist_ok=True)
+        video = dest / "output.mp4"
+        comfy.fetch_file(job["video"], video)
+        digest = hashlib.sha256(video.read_bytes()).hexdigest() if video.exists() else ""
+        spec = VideoSpec.from_dict(job.get("spec") or {})
+        request = GenerationRequest(
+            prompt=str(job.get("prompt") or "ComfyUI queue"),
+            engine=EngineId.comfyui,
+            spec=spec,
+            workflow="comfy-queue",
+        )
+        trace = ledger.new_stages()
+        for stage in trace:
+            stage.started_at = started
+            stage.ended_at = finished
+            stage.status = "succeeded"
+            if stage.name == "generate" and (job.get("trace") or {}).get("duration_s") is not None:
+                duration = float(job["trace"]["duration_s"])
+                stage.started_at = finished - duration
+        run = Run(
+            id=run_id,
+            request=request,
+            state=RunState.succeeded,
+            created_at=started,
+            started_at=started,
+            finished_at=finished,
+            trace=RunTrace(run_id=run_id, stages=trace),
+            artifact=Artifact(kind="video/mp4", path=str(video), size_bytes=video.stat().st_size, sha256=digest),
+        )
+        pack = {
+            "url": comfy.base_url(),
+            "workflow": "comfy-queue",
+            "prompt_id": prompt_id,
+            "imported": True,
+            "artifact": job.get("video"),
+            "bytes": video.stat().st_size,
+            "params": job.get("params") or {},
+            "trace": job.get("trace") or {},
+        }
+        (dest / "comfy.json").write_text(json.dumps(pack, indent=2))
+        (dest / "comfy.params.json").write_text(json.dumps(job.get("params") or {}, indent=2))
+        (dest / "comfy.trace.json").write_text(json.dumps(job.get("trace") or {}, indent=2))
+        if job.get("graph"):
+            (dest / "comfy.workflow.json").write_text(json.dumps(job["graph"], indent=2))
+        try:
+            (dest / "host.json").write_text(
+                json.dumps(capture_host("comfyui", spec.to_dict(), "comfyui-comfy-queue"), indent=2)
+            )
+        except Exception:
+            pass
+        duration = max(0.0, finished - started)
+        (dest / "status.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "state": "succeeded",
+                    "started_at": started,
+                    "finished_at": finished,
+                    "sha256": digest,
+                    "stages": [s.to_dict() for s in trace],
+                    "metrics": {
+                        "duration_s": duration,
+                        "size_bytes": video.stat().st_size,
+                        "comfy_prompt_id": prompt_id,
+                        "comfy_exec_s": (job.get("trace") or {}).get("duration_s"),
+                    },
+                },
+                indent=2,
+            )
+        )
+        ledger.save_run(run)
+        _mlflow_log_imported_comfy(run, dest, video, job)
+        return run
 
     def _hydrate(self, run: Run, persist: bool) -> Run:
         before = run.state
@@ -816,6 +929,75 @@ def _worker_python(engine: EngineId) -> Path:
     if engine is EngineId.comfyui:
         return Path(sys.executable)
     raise OccupancyError(f"LTX venv missing at {ltx}")
+
+
+def _known_comfy_prompt_ids() -> set[str]:
+    found: set[str] = set()
+    if not RUNS_DIR.exists():
+        return found
+    for path in RUNS_DIR.glob("*/comfy.json"):
+        data = _read_json(path) or {}
+        prompt_id = data.get("prompt_id")
+        if prompt_id:
+            found.add(str(prompt_id))
+    return found
+
+
+def _mlflow_log_imported_comfy(run: Run, dest: Path, video: Path, job: dict[str, Any]) -> None:
+    try:
+        import mlflow
+    except Exception:
+        return
+    try:
+        tracking = f"sqlite:///{ROOT / 'mlflow.db'}"
+        mlflow.set_tracking_uri(tracking)
+        mlflow.set_experiment("ltx-lab")
+        mlflow.start_run(run_name=run.id)
+        spec = run.request.spec
+        mlflow.log_params(
+            {
+                "engine": "comfyui",
+                "load": "comfyui-comfy-queue",
+                "workflow": "comfy-queue",
+                "comfy_prompt_id": job.get("prompt_id") or "",
+                "imported": "true",
+                "height": spec.height,
+                "width": spec.width,
+                "frames": spec.frames,
+                "fps": spec.fps,
+                "seed": spec.seed,
+            }
+        )
+        params = job.get("params") if isinstance(job.get("params"), dict) else {}
+        if params:
+            items = list(params.items())[:100]
+            mlflow.log_params({str(k): str(v)[:500] for k, v in items})
+        duration = None if run.started_at is None or run.finished_at is None else run.finished_at - run.started_at
+        if duration is not None:
+            mlflow.log_metric("duration_s", duration)
+        if video.exists():
+            mlflow.log_metric("size_bytes", video.stat().st_size)
+            mlflow.log_artifact(str(video), artifact_path="video")
+        for name in ("comfy.json", "comfy.params.json", "comfy.trace.json", "comfy.workflow.json"):
+            path = dest / name
+            if path.exists():
+                mlflow.log_artifact(str(path), artifact_path="comfy")
+        mlflow.set_tags({"run_id": run.id, "engine": "comfyui", "imported": "comfy-queue"})
+        mlflow.set_tag("status", "succeeded")
+        info = mlflow.active_run().info if mlflow.active_run() else None
+        if info:
+            run.trace.mlflow_run_id = info.run_id
+            run.trace.mlflow_experiment_id = str(info.experiment_id)
+            ledger.save_run(run)
+        mlflow.end_run()
+    except Exception:
+        try:
+            import mlflow as _ml
+
+            if _ml.active_run():
+                _ml.end_run(status="FAILED")
+        except Exception:
+            pass
 
 
 def ensure_console_build() -> bool:

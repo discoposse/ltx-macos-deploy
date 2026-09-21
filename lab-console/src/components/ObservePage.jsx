@@ -62,23 +62,29 @@ export default function ObservePage({ runId, onSelectRun }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchRuns()
-      .then((data) => {
-        if (cancelled) return;
-        const list = data.runs || [];
-        setRuns(list);
-        setError(null);
-        if (!runId && list.length) onSelectRun(list[0].id);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      });
+    const load = () => {
+      fetchRuns()
+        .then((data) => {
+          if (cancelled) return;
+          const list = data.runs || [];
+          setRuns(list);
+          setError(null);
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err.message);
+        });
+    };
+    load();
+    const id = setInterval(load, 4000);
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
-    // Pick the latest session once when opening Report with no hash id.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!runId && runs.length) onSelectRun(runs[0].id);
+  }, [runId, runs, onSelectRun]);
 
   useEffect(() => {
     if (!runId) {
@@ -172,7 +178,13 @@ export default function ObservePage({ runId, onSelectRun }) {
         </div>
       </div>
       {error && <InlineNotification kind="error" title="Report failed" subtitle={error} lowContrast />}
-      {!runId && <p className="hero-copy">Select a session to open its report.</p>}
+      {!runId && runs.length === 0 && (
+        <p className="hero-copy">
+          No lab sessions yet. Queue from Generate, or Queue Prompt in ComfyUI — finished Comfy clips are imported
+          into this list automatically.
+        </p>
+      )}
+      {!runId && runs.length > 0 && <p className="hero-copy">Select a session to open its report.</p>}
       {selected && (
         <>
           <div className="observe-meta">
