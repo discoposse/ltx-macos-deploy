@@ -141,6 +141,14 @@ def make_handler(lab: Lab):
                 from lab import ledger
                 self._json(200, {"references": ledger.list_pins()})
                 return
+            if path.startswith("/api/runs/") and "/compare/" in path:
+                parts = [item for item in path.split("/") if item]
+                if len(parts) >= 5 and parts[3] == "compare":
+                    try:
+                        self._json(200, lab.compare(parts[2], parts[4]))
+                    except FileNotFoundError:
+                        self._json(404, {"error": "run not found"})
+                    return
             if path.startswith("/api/runs/") and path.endswith("/observe"):
                 run_id = path.split("/")[3]
                 try:

@@ -89,9 +89,12 @@ def cmd_comfy(args: argparse.Namespace) -> int:
             return 1
         print(json.dumps(result, indent=2))
         return 0 if result.get("ok") else 1
+    if cmd == "models":
+        print(json.dumps(comfy.link_template_models(), indent=2))
+        return 0
     info = comfy.status()
     print(json.dumps(info, indent=2))
-    return 0 if info.get("ready") else 1
+    return 0 if info.get("running") or info.get("ready") else 1
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -219,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     comfy_sub.add_parser("start", help="Clone ~/Documents/ComfyUI if needed and listen on :8189")
     comfy_sub.add_parser("stop", help="Stop a ComfyUI process started by this lab")
     comfy_sub.add_parser("interrupt")
+    comfy_sub.add_parser("models", help="Move Comfy LTX template weights from ~/Downloads into ComfyUI/models/")
     gen = sub.add_parser("generate")
     gen.add_argument("prompt", nargs="?")
     gen.add_argument("--engine", default="ltx-distilled")

@@ -167,10 +167,19 @@ def detect_engines() -> list[EngineProfile]:
     try:
         from lab import comfy as comfy_client
         comfy_info = comfy_client.status()
+        comfy_running = bool(comfy_info.get("running"))
         comfy_ok = bool(comfy_info.get("ready"))
-        comfy_detail = comfy_info.get("error") or (
-            f"{comfy_info.get('url')} · {len(comfy_info.get('workflows') or [])} workflow(s)"
-        )
+        if comfy_ok:
+            comfy_detail = (
+                f"{comfy_info.get('url')} · {len(comfy_info.get('workflows') or [])} workflow(s)"
+            )
+        elif comfy_running:
+            comfy_detail = (
+                f"ComfyUI is up at {comfy_info.get('url')}. "
+                "Export File → Export (API) into workflows/comfy/ to generate from this lab."
+            )
+        else:
+            comfy_detail = comfy_info.get("error") or "Run ./labctl comfy start"
     except Exception as exc:
         comfy_ok, comfy_detail = False, str(exc)
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Dropdown, InlineNotification, Tag, Tile, CodeSnippet } from '@carbon/react';
-import { deleteRun, fetchObserve, fetchRuns, formatBytes, videoUrl } from '../api/lab';
+import { deleteRun, fetchCompare, fetchObserve, fetchRuns, formatBytes, videoUrl } from '../api/lab';
 import { BarChart, LineChart } from './RunCharts';
 
 function fmtBytes(n) {
@@ -16,6 +16,20 @@ function fmtDuration(s) {
   if (s == null) return '—';
   if (s >= 60) return `${Math.floor(s / 60)}m ${(s % 60).toFixed(0)}s`;
   return `${Number(s).toFixed(1)}s`;
+}
+
+function fmtDelta(value) {
+  if (value == null || value === '') return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n}`;
+}
+
+function winnerLabel(winner) {
+  if (winner === 'left') return 'A faster';
+  if (winner === 'right') return 'B faster';
+  return 'tie';
 }
 
 function Details({ title, rows }) {
@@ -43,6 +57,8 @@ export default function ObservePage({ runId, onSelectRun }) {
   const [runs, setRuns] = useState([]);
   const [pack, setPack] = useState(null);
   const [error, setError] = useState(null);
+  const [vsId, setVsId] = useState(null);
+  const [compare, setCompare] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +106,24 @@ export default function ObservePage({ runId, onSelectRun }) {
     };
   }, [runId]);
 
+  useEffect(() => {
+    if (!runId || !vsId || vsId === runId) {
+      setCompare(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchCompare(runId, vsId)
+      .then((data) => {
+        if (!cancelled) setCompare(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, vsId]);
+
   const selected = runs.find((item) => item.id === runId) || pack?.run;
   const job = pack?.job || {};
   const hardware = pack?.hardware || {};
@@ -99,24 +133,41 @@ export default function ObservePage({ runId, onSelectRun }) {
   const stages = pack?.charts?.stages || selected?.trace?.stages || [];
   const links = pack?.links || {};
   const comfy = pack?.comfy || {};
+  const params = pack?.params || {};
+  const comfyTrace = pack?.comfy_trace || comfy.trace || {};
+  const nodeTimings = comfyTrace.nodes || [];
   const running = selected?.state === 'running' || selected?.state === 'queued';
+  const vsRun = runs.find((item) => item.id === vsId) || null;
+  const compareItems = runs.filter((item) => item.id !== runId);
 
   return (
     <section className="lab-console__section">
       <div className="section-heading-row">
         <div>
           <h1 className="hero-title">Run report</h1>
-          <p className="hero-copy">Load a generation to review the clip, prompt, job, host, and charts for that session.</p>
+          <p className="hero-copy">
+            Load a generation to review the clip, prompt, host, MLflow, and charts. Pick a second session to A/B
+            parameters and wall time.
+          </p>
         </div>
         <div className="config-actions">
           <Dropdown
             id="run"
-            titleText="Session"
+            titleText="Session A"
             label="Select a run"
             items={runs}
             itemToString={(item) => (item ? `${item.id} (${item.state})` : '')}
             selectedItem={selected}
             onChange={({ selectedItem }) => selectedItem && onSelectRun(selectedItem.id)}
+          />
+          <Dropdown
+            id="run-vs"
+            titleText="Compare B"
+            label="None"
+            items={[{ id: '', state: 'none' }, ...compareItems]}
+            itemToString={(item) => (item?.id ? `${item.id} (${item.state})` : 'None')}
+            selectedItem={vsRun || { id: '', state: 'none' }}
+            onChange={({ selectedItem }) => setVsId(selectedItem?.id || null)}
           />
         </div>
       </div>
@@ -196,6 +247,90 @@ export default function ObservePage({ runId, onSelectRun }) {
               {job.error && <InlineNotification kind="error" title="Run error" subtitle={job.error} lowContrast />}
             </Tile>
           </div>
+          {compare && (
+            <Tile className="panel compare-board">
+              <div className="observe-board__intro">
+                <div>
+                  <h3>A/B compare</h3>
+                  <p>
+                    Session A `{compare.left?.id}` vs B `{compare.right?.id}`. {winnerLabel(compare.faster)} on wall
+                    time. Same join key as Grafana/MLflow (`run_id`).
+                  </p>
+                </div>
+                {links.mlflow && (
+                  <Button kind="tertiary" size="sm" onClick={() => window.open(links.mlflow, '_blank', 'noopener')}>
+                    Open MLflow
+                  </Button>
+                )}
+              </div>
+              <div className="compare-sets__grid">
+                <div className="compare-set">
+                  <span>A · {compare.left?.id}</span>
+                  {compare.left?.job?.state === 'succeeded' ? (
+                    <video className="ltx-video" src={videoUrl(compare.left.id)} controls />
+                  ) : (
+                    <p className="empty-state">No video</p>
+                  )}
+                </div>
+                <div className="compare-set">
+                  <span>B · {compare.right?.id}</span>
+                  {compare.right?.job?.state === 'succeeded' ? (
+                    <video className="ltx-video" src={videoUrl(compare.right.id)} controls />
+                  ) : (
+                    <p className="empty-state">No video</p>
+                  )}
+                </div>
+              </div>
+              <div className="compare-kpis">
+                {(compare.metrics || [])
+                  .filter((row) => ['duration_s', 'size_bytes', 'comfy_exec_s', 'stage_generate_s'].includes(row.key))
+                  .map((row) => (
+                    <div key={row.key} className="compare-kpi">
+                      <span>{row.key}</span>
+                      <strong>{row.winner === 'left' ? 'A' : row.winner === 'right' ? 'B' : '—'}</strong>
+                      <dl>
+                        <div>
+                          <dt>A</dt>
+                          <dd>{row.key === 'size_bytes' ? fmtBytes(row.left) : fmtDuration(row.left)}</dd>
+                        </div>
+                        <div>
+                          <dt>B</dt>
+                          <dd>{row.key === 'size_bytes' ? fmtBytes(row.right) : fmtDuration(row.right)}</dd>
+                        </div>
+                      </dl>
+                      <small>Δ {fmtDelta(row.delta)}</small>
+                    </div>
+                  ))}
+              </div>
+              <h3>Changed parameters</h3>
+              <div className="compare-table-wrap">
+                <table className="compare-table">
+                  <thead>
+                    <tr>
+                      <th>Parameter</th>
+                      <th>A</th>
+                      <th>B</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(compare.params_changed || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={3}>No parameter differences.</td>
+                      </tr>
+                    ) : (
+                      (compare.params_changed || []).map((row) => (
+                        <tr key={row.key} className="compare-table__changed">
+                          <td>{row.key}</td>
+                          <td>{row.left == null || row.left === '' ? '—' : String(row.left)}</td>
+                          <td>{row.right == null || row.right === '' ? '—' : String(row.right)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Tile>
+          )}
           <div className="resource-grid">
             <Details
               title="Job"
@@ -210,6 +345,7 @@ export default function ObservePage({ runId, onSelectRun }) {
                 ['Started', fmtTime(job.started_at)],
                 ['Finished', fmtTime(job.finished_at)],
                 ['Duration', fmtDuration(job.duration_s)],
+                ['Comfy exec', job.comfy_exec_s != null ? fmtDuration(job.comfy_exec_s) : null],
                 ['Video', job.video],
                 ['Size', job.size_bytes != null ? fmtBytes(job.size_bytes) : null],
                 ['SHA-256', job.sha256],
@@ -239,6 +375,9 @@ export default function ObservePage({ runId, onSelectRun }) {
                 ['Load', software.load],
                 ['Offload', software.offload],
                 ['LTX tree', software.ltx_tree],
+                ['Comfy', software.comfy_version],
+                ['Comfy Python', software.comfy_python],
+                ['Comfy PyTorch', software.comfy_pytorch],
               ]}
             />
             <Details
@@ -250,7 +389,19 @@ export default function ObservePage({ runId, onSelectRun }) {
                 ['Prefix', comfy.prefix],
                 ['Artifact', comfy.artifact?.filename],
                 ['Bytes', comfy.bytes != null ? fmtBytes(comfy.bytes) : null],
+                ['Version', comfy.comfy_version],
+                ['Exec', comfy.trace?.duration_s != null ? fmtDuration(comfy.trace.duration_s) : null],
+                ['Nodes', comfy.trace?.node_count],
+                ['Cached nodes', Array.isArray(comfy.trace?.cached_nodes) ? comfy.trace.cached_nodes.length : null],
               ]}
+            />
+            <Details
+              title="Graph parameters"
+              rows={Object.entries(params).slice(0, 48)}
+            />
+            <Details
+              title="Comfy node timings"
+              rows={nodeTimings.slice(0, 24).map((node) => [node.node, fmtDuration(node.duration_s)])}
             />
             <Details
               title="oMLX cache"

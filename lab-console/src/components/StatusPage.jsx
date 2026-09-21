@@ -138,12 +138,14 @@ export default function StatusPage({ onOpenGenerate, onOpenControls }) {
             <>
               <h2 className="lab-console__section-title" style={{ marginTop: '2rem' }}>ComfyUI neighbor</h2>
               <div className="resource-grid">
-                <Tile className={`resource-card resource-card--${comfy.ready ? 'up' : 'down'}`}>
+                <Tile className={`resource-card resource-card--${comfy.running || comfy.ready ? 'up' : 'down'}`}>
                   <div className="resource-card__top">
                     <h3>Graph editor + queue</h3>
-                    <Tag type={comfy.ready ? 'green' : 'gray'}>{comfy.ready ? 'ready' : 'down'}</Tag>
+                    <Tag type={comfy.running || comfy.ready ? 'green' : 'gray'}>
+                      {comfy.ready ? 'ready' : comfy.running ? 'up' : 'down'}
+                    </Tag>
                   </div>
-                  <p>{comfy.error || comfy.how || comfy.url}</p>
+                  <p>{comfy.running ? comfy.how || comfy.url : comfy.error || comfy.how || comfy.url}</p>
                   <p className="resource-card__kind">Listen {comfy.url || 'http://127.0.0.1:8189'}</p>
                   <p className="resource-card__kind">
                     Workflows {(comfy.workflows || []).length}

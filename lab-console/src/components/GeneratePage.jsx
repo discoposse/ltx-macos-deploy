@@ -329,7 +329,7 @@ export default function GeneratePage({ onOpenObserve, jobs }) {
                 Then File → Export (API) into <code>workflows/comfy/</code>. Generate fills prompt,
                 seed, size, frames, and fps and queues that graph.
               </p>
-              {comfy?.ready ? (
+              {comfy?.running || comfy?.ready ? (
                 <p className="omlx-assist__meta">
                   {comfy.how}
                   {comfy.queue && (
@@ -339,10 +339,11 @@ export default function GeneratePage({ onOpenObserve, jobs }) {
                     </>
                   )}
                   {comfy.model_hint ? ` · ${comfy.model_hint}` : ''}
+                  {!comfy.ready && ' · export File → Export (API) into workflows/comfy to generate from this lab'}
                 </p>
               ) : (
                 <p className="omlx-assist__meta">
-                  {comfy?.error || 'ComfyUI is not running.'} {comfy?.how || 'Start it on 127.0.0.1:8189.'}
+                  {comfy?.error || 'ComfyUI is not running.'} {comfy?.how || 'Start it with ./labctl comfy start.'}
                 </p>
               )}
             </div>

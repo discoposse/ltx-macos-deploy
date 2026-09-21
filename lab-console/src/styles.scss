@@ -688,6 +688,10 @@ body {
   border-bottom: 0;
 }
 
+.compare-table__changed td {
+  background: $layer-01;
+}
+
 .observe-meta {
   display: flex;
   flex-wrap: wrap;

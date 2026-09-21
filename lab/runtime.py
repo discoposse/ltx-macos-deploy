@@ -123,10 +123,22 @@ class Lab:
         try:
             comfy_info = comfy.status()
         except Exception as exc:
-            comfy_info = {"ready": False, "error": str(exc), "url": comfy.base_url()}
+            comfy_info = {"running": False, "ready": False, "error": str(exc), "url": comfy.base_url()}
+        comfy_running = bool(comfy_info.get("running"))
         comfy_ready = bool(comfy_info.get("ready"))
-        comfy_detail = comfy_info.get("error") or (
-            f"{comfy_info.get('url')} · {len(comfy_info.get('workflows') or [])} workflow(s)"
+        workflow_n = len(comfy_info.get("workflows") or [])
+        if comfy_running:
+            comfy_detail = comfy_info.get("url") or comfy.base_url()
+            if workflow_n:
+                comfy_detail = f"{comfy_detail} · {workflow_n} workflow(s)"
+            else:
+                comfy_detail = f"{comfy_detail} · running · export File → Export (API) into workflows/comfy/"
+        else:
+            comfy_detail = comfy_info.get("error") or "ComfyUI is not running"
+        comfy_fix = (
+            f"Export an LTX workflow (API) into workflows/comfy/"
+            if comfy_running and not comfy_ready
+            else f"Run ./labctl comfy start (listens on :{comfy.DEFAULT_PORT}; this lab already uses :8188)"
         )
         api_ok = occupancy.port_open(self.ports["lab_api"])
         console_ok = occupancy.port_open(self.ports["console"]) or occupancy.port_open(self.ports["lab_api"])
@@ -156,10 +168,10 @@ class Lab:
                 "comfyui",
                 "ComfyUI",
                 "engine",
-                "up" if comfy_ready else "down",
+                "up" if comfy_running else "down",
                 False,
                 comfy_detail,
-                f"Run ./labctl comfy start (listens on :{comfy.DEFAULT_PORT}; this lab already uses :8188)",
+                comfy_fix,
             ),
         ]
         required_down = [c for c in components if c.required and c.state != "up"]
@@ -234,11 +246,16 @@ class Lab:
         if latest:
             spec = latest.request.spec
             artifact = (latest.artifact.path if latest.artifact else f"runs/{latest.id}/output.mp4")
+            load = LOAD_NAME
+            if latest.request.engine is EngineId.ltx_dfr:
+                load = "ltx-2.5-22b-dfr"
+            elif latest.request.engine is EngineId.comfyui:
+                load = f"comfyui-{latest.request.workflow or 'default'}"
             labels = ",".join(
                 [
                     f'run_id="{esc(latest.id)}"',
                     f'engine="{esc(latest.request.engine.value)}"',
-                    f'load="{LOAD_NAME}"',
+                    f'load="{esc(load)}"',
                     f'spec="{esc(f"{spec.height}x{spec.width}x{spec.frames}")}"',
                     f'offload="{esc(spec.offload)}"',
                     f'video="{esc(Path(artifact).name)}"',
@@ -346,12 +363,7 @@ class Lab:
 
     def _launch(self, run: Run) -> Run:
         dest = ledger.run_dir(run.id)
-        if run.request.engine is EngineId.comfyui:
-            python = Path(sys.executable)
-        else:
-            python = LTX_ROOT / ".venv/bin/python"
-        if not python.exists():
-            raise OccupancyError(f"LTX venv missing at {python}")
+        python = _worker_python(run.request.engine)
         log_path = dest / "worker.log"
         log_fh = open(log_path, "a")
         env = os.environ.copy()
@@ -496,10 +508,22 @@ class Lab:
         omlx_pack = _read_json(dest / "omlx.json") or {}
         cache = _omlx_report(omlx_pack)
         comfy_pack = _read_json(dest / "comfy.json") or {}
+        params = _read_json(dest / "comfy.params.json") or {}
+        if not params and isinstance(comfy_pack.get("params"), dict):
+            params = dict(comfy_pack["params"])
+        comfy_trace = _read_json(dest / "comfy.trace.json") or {}
+        if not comfy_trace and isinstance(comfy_pack.get("trace"), dict):
+            comfy_trace = dict(comfy_pack["trace"])
+        if comfy_pack and comfy_trace:
+            comfy_pack = {**comfy_pack, "trace": comfy_trace}
+        status = _read_json(dest / "status.json") or {}
+        metrics = status.get("metrics") if isinstance(status.get("metrics"), dict) else {}
         grafana = self.links().grafana
         mlflow = self.links().mlflow
         spec = run.request.spec
         load = str(host.get("load") or LOAD_NAME)
+        if run.request.engine is EngineId.comfyui and (not host.get("load") or host.get("load") == LOAD_NAME):
+            load = f"comfyui-{run.request.workflow or comfy_pack.get('workflow') or 'default'}"
         video = f"{run.id}/output.mp4"
         from_ms, to_ms = _grafana_window(run)
         grafana_run = (
@@ -555,6 +579,7 @@ class Lab:
                 "mlflow_experiment_id": run.trace.mlflow_experiment_id,
                 "error": run.error,
                 "pinned": run.pinned,
+                "comfy_exec_s": metrics.get("comfy_exec_s") or (comfy_trace.get("duration_s") if comfy_trace else None),
             },
             "hardware": {
                 "hostname": host.get("hostname"),
@@ -578,10 +603,16 @@ class Lab:
                 "load": load,
                 "offload": spec.offload,
                 "ltx_tree": host.get("ltx_tree"),
+                "comfy_version": comfy_pack.get("comfy_version"),
+                "comfy_python": comfy_pack.get("python"),
+                "comfy_pytorch": comfy_pack.get("pytorch"),
             },
             "host": host or None,
             "omlx": omlx_pack or None,
             "comfy": comfy_pack or None,
+            "comfy_trace": comfy_trace or None,
+            "params": params or None,
+            "metrics": metrics or None,
             "cache": cache,
             "samples": samples,
             "charts": {
@@ -602,12 +633,7 @@ class Lab:
                 {"id": "stages", "title": "Stage duration", "panel_id": 5, "url": f"{solo}&panelId=5"},
                 {"id": "logs", "title": "Worker log", "panel_id": 6, "url": f"{solo}&panelId=6"},
             ],
-            "layers": [
-                {"id": "prompt", "title": "Prompt", "why": "User intent", "note": run.request.prompt},
-                {"id": "encode", "title": "Text encoder", "why": "Gemma embeddings", "note": "Stage encode"},
-                {"id": "denoise", "title": "Transformer", "why": "Distilled denoise at half then full res", "note": "Stage generate"},
-                {"id": "decode", "title": "VAE + mux", "why": "Pixels + audio to mp4", "note": "Stage write"},
-            ],
+            "layers": _observe_layers(run, comfy_pack),
             "links": {
                 **self.links().to_dict(),
                 "grafana_run": grafana_run,
@@ -621,6 +647,11 @@ class Lab:
                 ),
             },
         }
+
+    def compare(self, left_id: str, right_id: str) -> dict:
+        left = self.observe(left_id)
+        right = self.observe(right_id)
+        return compare_observe_packs(left, right)
 
     def omlx_status(self) -> dict:
         return omlx.status()
@@ -778,6 +809,15 @@ def _cleanup_stale_ltx_containers() -> None:
     )
 
 
+def _worker_python(engine: EngineId) -> Path:
+    ltx = LTX_ROOT / ".venv/bin/python"
+    if ltx.is_file():
+        return ltx
+    if engine is EngineId.comfyui:
+        return Path(sys.executable)
+    raise OccupancyError(f"LTX venv missing at {ltx}")
+
+
 def ensure_console_build() -> bool:
     index = CONSOLE_DIST / "index.html"
     if index.exists():
@@ -895,6 +935,112 @@ def _write_pid(name: str, pid: int) -> None:
     data[name] = pid
     PIDS_PATH.parent.mkdir(parents=True, exist_ok=True)
     PIDS_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _observe_layers(run: Run, comfy_pack: dict[str, Any]) -> list[dict[str, str]]:
+    prompt = run.request.prompt
+    if run.request.engine is EngineId.comfyui:
+        workflow = run.request.workflow or comfy_pack.get("workflow") or "default"
+        prompt_id = comfy_pack.get("prompt_id") or ""
+        return [
+            {"id": "prompt", "title": "Prompt", "why": "User intent filled into the API graph", "note": prompt},
+            {"id": "encode", "title": "Queue graph", "why": "POST /prompt on ComfyUI :8189", "note": str(workflow)},
+            {"id": "denoise", "title": "Comfy execution", "why": "Node graph wall time", "note": str(prompt_id)},
+            {"id": "decode", "title": "Fetch artifact", "why": "Pull mp4 from /view into the ledger", "note": "Stage write"},
+        ]
+    denoise = "DFR denoise + spatial upscale" if run.request.engine is EngineId.ltx_dfr else "Distilled denoise at half then full res"
+    return [
+        {"id": "prompt", "title": "Prompt", "why": "User intent", "note": prompt},
+        {"id": "encode", "title": "Text encoder", "why": "Gemma embeddings", "note": "Stage encode"},
+        {"id": "denoise", "title": "Transformer", "why": denoise, "note": "Stage generate"},
+        {"id": "decode", "title": "VAE + mux", "why": "Pixels + audio to mp4", "note": "Stage write"},
+    ]
+
+
+def pack_params(pack: dict[str, Any]) -> dict[str, Any]:
+    job = pack.get("job") or {}
+    out: dict[str, Any] = {
+        "engine": job.get("engine"),
+        "load": job.get("load"),
+        "height": job.get("height"),
+        "width": job.get("width"),
+        "frames": job.get("frames"),
+        "fps": job.get("fps"),
+        "seed": job.get("seed"),
+        "offload": job.get("offload"),
+        "workflow": job.get("workflow"),
+        "prompt": job.get("prompt"),
+    }
+    extra = pack.get("params")
+    if isinstance(extra, dict):
+        for key, value in extra.items():
+            out.setdefault(key, value)
+    return {key: value for key, value in out.items() if value is not None and value != ""}
+
+
+def pack_metrics(pack: dict[str, Any]) -> dict[str, Any]:
+    job = pack.get("job") or {}
+    metrics: dict[str, Any] = {}
+    if job.get("duration_s") is not None:
+        metrics["duration_s"] = job["duration_s"]
+    if job.get("size_bytes") is not None:
+        metrics["size_bytes"] = job["size_bytes"]
+    if job.get("comfy_exec_s") is not None:
+        metrics["comfy_exec_s"] = job["comfy_exec_s"]
+    for stage in (pack.get("charts") or {}).get("stages") or []:
+        if stage.get("started_at") and stage.get("ended_at"):
+            metrics[f"stage_{stage['name']}_s"] = round(stage["ended_at"] - stage["started_at"], 3)
+    extra = pack.get("metrics")
+    if isinstance(extra, dict):
+        for key, value in extra.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                metrics.setdefault(key, value)
+    trace = pack.get("comfy_trace") or ((pack.get("comfy") or {}).get("trace") if isinstance(pack.get("comfy"), dict) else None)
+    if isinstance(trace, dict) and trace.get("duration_s") is not None:
+        metrics.setdefault("comfy_exec_s", trace["duration_s"])
+    return metrics
+
+
+def _metric_row(key: str, left: Any, right: Any) -> dict[str, Any]:
+    lower_is_better = key.endswith("_s") or key in {"duration_s", "size_bytes", "comfy_exec_s", "comfy_nodes"}
+    row: dict[str, Any] = {"key": key, "left": left, "right": right, "delta": None, "winner": None, "lower_is_better": lower_is_better}
+    try:
+        lv, rv = float(left), float(right)
+    except (TypeError, ValueError):
+        if left != right:
+            row["winner"] = "changed"
+        return row
+    row["delta"] = round(rv - lv, 4)
+    if row["delta"] == 0:
+        return row
+    if lower_is_better:
+        row["winner"] = "left" if rv > lv else "right"
+    else:
+        row["winner"] = "right" if rv > lv else "left"
+    return row
+
+
+def compare_observe_packs(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    left_params = pack_params(left)
+    right_params = pack_params(right)
+    left_metrics = pack_metrics(left)
+    right_metrics = pack_metrics(right)
+    param_keys = sorted(set(left_params) | set(right_params))
+    metric_keys = sorted(set(left_metrics) | set(right_metrics))
+    params = []
+    for key in param_keys:
+        lv, rv = left_params.get(key), right_params.get(key)
+        params.append({"key": key, "left": lv, "right": rv, "changed": lv != rv})
+    metrics = [_metric_row(key, left_metrics.get(key), right_metrics.get(key)) for key in metric_keys]
+    duration = next((row for row in metrics if row["key"] == "duration_s"), None)
+    return {
+        "left": {"id": (left.get("identity") or {}).get("run_id"), "job": left.get("job"), "identity": left.get("identity")},
+        "right": {"id": (right.get("identity") or {}).get("run_id"), "job": right.get("job"), "identity": right.get("identity")},
+        "params": params,
+        "params_changed": [row for row in params if row["changed"]],
+        "metrics": metrics,
+        "faster": None if duration is None else duration.get("winner"),
+    }
 
 
 def _omlx_report(pack: dict[str, Any]) -> dict[str, Any]:

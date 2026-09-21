@@ -24,6 +24,46 @@ STAGES = (
 )
 
 
+def _mlflow_value(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    text = str(value)
+    return text[:500]
+
+
+def _mlflow_log_params(params: dict) -> None:
+    if not params:
+        return
+    import mlflow
+
+    items = [(str(k), _mlflow_value(v)) for k, v in params.items() if v is not None and v != ""]
+    for index in range(0, len(items), 100):
+        mlflow.log_params(dict(items[index : index + 100]))
+
+
+def _mlflow_log_artifacts(dest: Path, output_path: Path) -> None:
+    import mlflow
+
+    if output_path.exists():
+        mlflow.log_artifact(str(output_path), artifact_path="video")
+    for name, folder in (
+        ("worker.log", "logs"),
+        ("host.json", "report"),
+        ("samples.jsonl", "report"),
+        ("comfy.json", "comfy"),
+        ("comfy.workflow.json", "comfy"),
+        ("comfy.params.json", "comfy"),
+        ("comfy.trace.json", "comfy"),
+        ("request.json", "report"),
+        ("run.json", "report"),
+    ):
+        path = dest / name
+        if path.exists() and path.stat().st_size > 0:
+            mlflow.log_artifact(str(path), artifact_path=folder)
+
+
 def _run_comfy(payload, dest, start_stage, end_stage, log, flush, started, observer) -> int:
     from lab.comfy import run_job
     from lab.hostinfo import capture_host
@@ -59,18 +99,55 @@ def _run_comfy(payload, dest, start_stage, end_stage, log, flush, started, obser
     digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
     duration = time.time() - started
     log(f"END run_id={payload['run_id']} video={output_path} bytes={output_path.stat().st_size} duration={duration:.1f}s comfy={pack.get('prompt_id')}")
+    extra_metrics = {"total_duration": duration, "size_bytes": output_path.stat().st_size}
+    trace = pack.get("trace") if isinstance(pack.get("trace"), dict) else {}
+    if trace.get("duration_s") is not None:
+        extra_metrics["comfy_exec_s"] = trace["duration_s"]
     if observer:
         try:
-            observer.end_run(str(output_path), success=True, extra_metrics={"total_duration": duration})
+            observer.end_run(str(output_path), success=True, extra_metrics=extra_metrics)
         except Exception:
             pass
     try:
         import mlflow
         if mlflow.active_run():
-            mlflow.log_params({"workflow": pack.get("workflow") or "", "comfy_prompt_id": pack.get("prompt_id") or ""})
-            if output_path.exists():
-                mlflow.log_artifact(str(output_path), artifact_path="video")
+            graph_params = pack.get("params") if isinstance(pack.get("params"), dict) else {}
+            _mlflow_log_params(
+                {
+                    "workflow": pack.get("workflow") or "",
+                    "comfy_prompt_id": pack.get("prompt_id") or "",
+                    "comfy_version": pack.get("comfy_version") or "",
+                    **graph_params,
+                }
+            )
+            mlflow.log_metric("duration_s", duration)
+            mlflow.log_metric("size_bytes", output_path.stat().st_size)
+            if trace.get("duration_s") is not None:
+                mlflow.log_metric("comfy_exec_s", float(trace["duration_s"]))
+            if trace.get("node_count") is not None:
+                mlflow.log_metric("comfy_nodes", float(trace["node_count"]))
+            for node in (trace.get("nodes") or [])[:20]:
+                node_id = str(node.get("node") or "node")
+                if node.get("duration_s") is None:
+                    continue
+                mlflow.log_metric(f"comfy_node_{node_id}_s", float(node["duration_s"]))
+            try:
+                import torch
+
+                if torch.backends.mps.is_available():
+                    mlflow.log_metric("mps_allocated", float(torch.mps.current_allocated_memory()))
+                    mlflow.log_metric("mps_driver", float(torch.mps.driver_allocated_memory()))
+            except Exception:
+                pass
+            host_path = dest / "host.json"
+            if host_path.exists():
+                try:
+                    mlflow.log_dict(json.loads(host_path.read_text()), "host.json")
+                except Exception:
+                    pass
+            _mlflow_log_artifacts(dest, output_path)
             mlflow.set_tag("status", "succeeded")
+            mlflow.set_tag("workflow", pack.get("workflow") or "")
             mlflow.end_run()
     except Exception:
         pass
@@ -78,7 +155,13 @@ def _run_comfy(payload, dest, start_stage, end_stage, log, flush, started, obser
         state="succeeded",
         finished_at=time.time(),
         sha256=digest,
-        metrics={"duration_s": duration, "comfy_prompt_id": pack.get("prompt_id")},
+        metrics={
+            "duration_s": duration,
+            "size_bytes": output_path.stat().st_size,
+            "comfy_prompt_id": pack.get("prompt_id"),
+            "comfy_exec_s": trace.get("duration_s"),
+            "comfy_nodes": trace.get("node_count"),
+        },
     )
     return 0
 
@@ -114,8 +197,8 @@ def main() -> int:
             "started_at": started,
             "finished_at": extra.get("finished_at"),
             "error": extra.get("error"),
-            "mlflow_run_id": extra.get("mlflow_run_id"),
-            "mlflow_experiment_id": extra.get("mlflow_experiment_id"),
+            "mlflow_run_id": extra.get("mlflow_run_id", mlflow_run_id),
+            "mlflow_experiment_id": extra.get("mlflow_experiment_id", mlflow_experiment_id),
             "sha256": extra.get("sha256"),
             "stages": stages,
             "events": events[-400:],
@@ -387,16 +470,7 @@ def main() -> int:
                     mlflow.log_metric("mps_driver", float(torch.mps.driver_allocated_memory()))
                 except Exception:
                     pass
-                log_path = dest / "worker.log"
-                if log_path.exists():
-                    mlflow.log_artifact(str(log_path), artifact_path="logs")
-                host_path = dest / "host.json"
-                if host_path.exists():
-                    mlflow.log_artifact(str(host_path), artifact_path="report")
-                samples_path = dest / "samples.jsonl"
-                if samples_path.exists():
-                    mlflow.log_artifact(str(samples_path), artifact_path="report")
-                mlflow.log_artifact(str(output_path), artifact_path="video")
+                _mlflow_log_artifacts(dest, output_path)
                 mlflow.set_tag("status", "succeeded")
                 mlflow.end_run()
         except Exception:
@@ -407,7 +481,7 @@ def main() -> int:
             mlflow_run_id=mlflow_run_id,
             mlflow_experiment_id=mlflow_experiment_id,
             sha256=digest,
-            metrics={"duration_s": duration},
+            metrics={"duration_s": duration, "size_bytes": output_path.stat().st_size},
         )
         return 0
     except Exception as exc:

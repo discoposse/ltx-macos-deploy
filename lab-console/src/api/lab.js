@@ -44,6 +44,10 @@ export async function fetchObserve(id) {
   return labFetch(`/api/runs/${encodeURIComponent(id)}/observe`);
 }
 
+export async function fetchCompare(leftId, rightId) {
+  return labFetch(`/api/runs/${encodeURIComponent(leftId)}/compare/${encodeURIComponent(rightId)}`);
+}
+
 export async function generate(payload) {
   return labFetch('/api/generate', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(payload) });
 }

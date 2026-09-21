@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -30,6 +31,13 @@ DEFAULT_ROOT = Path.home() / "Documents" / "ComfyUI"
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI.git"
 PID_PATH = ROOT / ".lab" / "comfy.pid"
 LOG_PATH = ROOT / ".lab" / "comfy.log"
+# Official Comfy LTX-2.5 templates pin these exact filenames. Browser
+# "Download" from Missing Models lands in ~/Downloads, not Comfy's folders.
+TEMPLATE_MODELS: tuple[tuple[str, str], ...] = (
+    ("text_encoders", "gemma4_e2b_it_int8_convrot.safetensors"),
+    ("text_encoders", "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"),
+    ("diffusion_models", "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"),
+)
 VIDEO_SUFFIXES = {".mp4", ".webm", ".mov", ".mkv"}
 PROMPT_KEYS = ("text", "prompt", "positive", "positive_prompt", "positive_text")
 NEGATIVE_MARKERS = ("negative", "neg_prompt", "neg text")
@@ -40,6 +48,7 @@ FRAME_KEYS = ("length", "num_frames", "frame_count", "frames", "num_frames_total
 FPS_KEYS = ("frame_rate", "fps", "framerate")
 PREFIX_KEYS = ("filename_prefix",)
 CLIP_TYPES = ("cliptextencode", "gemmaclip", "ltxvtext", "prompt")
+SKIP_PARAM_KEYS = PREFIX_KEYS + ("image", "mask", "pixels", "latent", "audio", "video")
 LogFn = Callable[[str], None]
 
 
@@ -149,6 +158,84 @@ def _write_extra_model_paths(root: Path) -> None:
     )
 
 
+def _model_search_dirs(root: Path) -> tuple[Path, ...]:
+    downloads = Path.home() / "Downloads"
+    ltx = LTX_ROOT / "models" / "ltx-2.5"
+    return (
+        downloads,
+        ltx / "text_encoders",
+        ltx / "diffusion_models",
+        root / "models" / "text_encoders",
+        root / "models" / "diffusion_models",
+    )
+
+
+def _same_file(left: Path, right: Path) -> bool:
+    try:
+        a, b = left.stat(), right.stat()
+    except OSError:
+        return False
+    return a.st_ino == b.st_ino and a.st_dev == b.st_dev
+
+
+def _drop_download_name(src: Path, dest: Path) -> bool:
+    """Remove the Downloads (or other source) name once dest holds the bytes."""
+    if not src.exists() or src.resolve() == dest.resolve():
+        return False
+    if _same_file(src, dest) or (src.is_file() and dest.is_file() and src.stat().st_size == dest.stat().st_size):
+        src.unlink()
+        return True
+    return False
+
+
+def _move_into(src: Path, dest: Path) -> str:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        if _same_file(src, dest) or src.resolve() == dest.resolve():
+            return "moved" if _drop_download_name(src, dest) else "present"
+        return "exists"
+    try:
+        os.replace(src, dest)
+    except OSError:
+        shutil.move(str(src), str(dest))
+    return "moved"
+
+
+def link_template_models(root: Optional[Path] = None) -> dict[str, Any]:
+    """Move Comfy template weights from ~/Downloads into ComfyUI/models/."""
+    checkout = root or install_root() or Path(os.environ.get("COMFYUI_ROOT") or DEFAULT_ROOT).expanduser()
+    downloads = Path.home() / "Downloads"
+    search = _model_search_dirs(checkout)
+    placed: list[dict[str, str]] = []
+    missing: list[dict[str, str]] = []
+    for kind, name in TEMPLATE_MODELS:
+        dest = checkout / "models" / kind / name
+        download = downloads / name
+        if dest.is_file() and dest.stat().st_size > 1_000_000:
+            action = "moved" if download.is_file() and _drop_download_name(download, dest) else "present"
+            placed.append({"name": name, "kind": kind, "action": action, "path": str(dest)})
+            continue
+        src = next(
+            (
+                folder / name
+                for folder in search
+                if (folder / name).is_file() and (folder / name).resolve() != dest.resolve()
+            ),
+            None,
+        )
+        if src is None:
+            missing.append({"name": name, "kind": kind, "dest": str(dest)})
+            continue
+        action = _move_into(src, dest)
+        placed.append({"name": name, "kind": kind, "action": action, "path": str(dest), "from": str(src)})
+    return {
+        "ok": not missing,
+        "root": str(checkout),
+        "placed": placed,
+        "missing": missing,
+    }
+
+
 def ensure_checkout() -> Path:
     root = install_root()
     if root:
@@ -193,6 +280,7 @@ def start(*, timeout_s: float = 180.0) -> dict[str, Any]:
     if root:
         python = ensure_venv(root)
         _write_extra_model_paths(root)
+        link_template_models(root)
         log = open(LOG_PATH, "ab")
         proc = subprocess.Popen(
             [
@@ -472,6 +560,111 @@ def fill_graph(
     return filled
 
 
+def mlflow_param_key(text: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", str(text or "")).strip("_")
+    if not cleaned:
+        cleaned = "param"
+    if cleaned[0].isdigit():
+        cleaned = f"n_{cleaned}"
+    return cleaned[:250]
+
+
+def _param_scalar(value: Any) -> Any:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return value if value == value else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or len(text) > 240 or "\n" in text:
+            return None
+        return text
+    return None
+
+
+def flatten_graph_params(graph: dict[str, Any]) -> dict[str, Any]:
+    """Scalar node inputs for MLflow / A/B. Skips wires, images, and long text."""
+    filled = as_api_graph(graph) if graph else {}
+    out: dict[str, Any] = {}
+    for node_id, node in filled.items():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "node")
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in inputs.items():
+            lower = str(key).lower()
+            if lower in SKIP_PARAM_KEYS:
+                continue
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], (str, int)):
+                continue
+            scalar = _param_scalar(value)
+            if scalar is None:
+                continue
+            slug = mlflow_param_key(f"{class_type}_{key}")
+            if slug in out:
+                slug = mlflow_param_key(f"{node_id}_{slug}")
+            out[slug] = scalar
+    return out
+
+
+def _as_epoch_seconds(ts: Any) -> Optional[float]:
+    try:
+        value = float(ts)
+    except (TypeError, ValueError):
+        return None
+    if value > 10_000_000_000:
+        value /= 1000.0
+    return value
+
+
+def execution_trace(entry: dict[str, Any]) -> dict[str, Any]:
+    """Node wall times from Comfy history status.messages."""
+    status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+    messages = status.get("messages") if isinstance(status.get("messages"), list) else []
+    nodes: list[dict[str, Any]] = []
+    cached: list[str] = []
+    start_ts: Optional[float] = None
+    end_ts: Optional[float] = None
+    last: Optional[tuple[Optional[str], Optional[float]]] = None
+    for item in messages:
+        if not isinstance(item, (list, tuple)) or not item:
+            continue
+        kind = str(item[0])
+        payload = item[1] if len(item) > 1 and isinstance(item[1], dict) else {}
+        ts = _as_epoch_seconds(payload.get("timestamp"))
+        if kind == "execution_start":
+            start_ts = ts
+        elif kind in {"execution_success", "execution_error"}:
+            end_ts = ts
+        elif kind == "execution_cached":
+            raw = payload.get("nodes") or []
+            cached = [str(n) for n in raw] if isinstance(raw, list) else []
+        elif kind == "executing":
+            node = payload.get("node")
+            node_id = None if node in (None, "") else str(node)
+            if last and last[0] and last[1] is not None and ts is not None:
+                nodes.append({"node": last[0], "duration_s": round(ts - last[1], 4)})
+            last = (node_id, ts)
+    if last and last[0] and last[1] is not None and end_ts is not None:
+        nodes.append({"node": last[0], "duration_s": round(end_ts - last[1], 4)})
+    duration = None if start_ts is None or end_ts is None else round(end_ts - start_ts, 4)
+    nodes.sort(key=lambda row: float(row.get("duration_s") or 0), reverse=True)
+    return {
+        "status": status.get("status_str"),
+        "completed": bool(status.get("completed")),
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "duration_s": duration,
+        "cached_nodes": cached,
+        "nodes": nodes[:80],
+        "node_count": len(nodes),
+    }
+
+
 def _models(url: str, kind: str) -> list[str]:
     try:
         code, body = _json(f"{url}/models/{kind}", timeout=1.2)
@@ -494,6 +687,7 @@ def status() -> dict[str, Any]:
     how = how_to_start()
     if not url or stats is None:
         return {
+            "running": False,
             "ready": False,
             "url": f"http://127.0.0.1:{DEFAULT_PORT}",
             "ui": f"http://127.0.0.1:{DEFAULT_PORT}",
@@ -523,6 +717,7 @@ def status() -> dict[str, Any]:
     )
     system = stats.get("system") if isinstance(stats.get("system"), dict) else {}
     return {
+        "running": True,
         "ready": ready,
         "url": url,
         "ui": url,
@@ -668,7 +863,9 @@ def run_job(
     name, graph = load_graph(workflow)
     prefix = f"ltx-lab/{run_id}"
     filled = fill_graph(graph, prompt=prompt, spec=spec, prefix=prefix)
+    params = flatten_graph_params(filled)
     (dest / "comfy.workflow.json").write_text(json.dumps(filled, indent=2))
+    (dest / "comfy.params.json").write_text(json.dumps(params, indent=2))
     client_id = uuid.uuid4().hex
     prompt_id = uuid.uuid4().hex
     if on_stage:
@@ -680,12 +877,19 @@ def run_job(
         "prompt_id": queued_id,
         "client_id": client_id,
         "prefix": prefix,
+        "comfy_version": info.get("comfy_version"),
+        "python": info.get("python"),
+        "pytorch": info.get("pytorch"),
+        "devices": info.get("devices") or [],
+        "params": params,
     }
     (dest / "comfy.json").write_text(json.dumps(pack, indent=2))
     emit(f"queued ComfyUI prompt_id={queued_id} workflow={name} url={info.get('url')}")
     if on_stage:
         on_stage("generate")
     entry = wait_for_output(queued_id, log=emit)
+    trace = execution_trace(entry)
+    (dest / "comfy.trace.json").write_text(json.dumps(trace, indent=2))
     files = _output_files(entry)
     video = next((item for item in files if Path(item["filename"]).suffix.lower() in VIDEO_SUFFIXES), None)
     if video is None:
@@ -696,6 +900,9 @@ def run_job(
     fetch_file(video, output)
     pack["artifact"] = video
     pack["bytes"] = output.stat().st_size
+    pack["trace"] = trace
     (dest / "comfy.json").write_text(json.dumps(pack, indent=2))
     emit(f"fetched {video['filename']} -> {output} bytes={pack['bytes']}")
+    if trace.get("duration_s") is not None:
+        emit(f"comfy exec={trace['duration_s']}s nodes={trace.get('node_count')}")
     return pack

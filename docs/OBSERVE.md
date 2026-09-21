@@ -24,13 +24,17 @@ Load name is `ltx-2.5-22b-distilled`. Memory and CPU gauges are process-wide; pi
 |---|---|
 | `host.json` | Machine, OS, Python, PyTorch, MPS, spec |
 | `omlx.json` | oMLX model, models dir, SSD/hot cache paths, usage, cache probe (written when oMLX is up) |
-| `comfy.json` | ComfyUI URL, workflow name, prompt id, fetched artifact (Comfy engine only) |
+| `comfy.json` | ComfyUI URL, workflow name, prompt id, fetched artifact, version, devices (Comfy engine only) |
 | `comfy.workflow.json` | Filled API graph that was queued |
+| `comfy.params.json` | Scalar graph inputs (steps, CFG, model filenames, sampler, seed) for MLflow / A/B |
+| `comfy.trace.json` | Node wall times from Comfy history `status.messages` |
 | `samples.jsonl` | ~5s RSS / unified / MPS / CPU samples while the worker is up |
 | `worker.log` | Stage and error lines labeled with `run_id` |
 | `output.mp4` | Finished clip |
 
 The report reads these files from the ledger, so it still works if Grafana or the worker process is down. Grafana iframes are extra, for the same window.
+
+ComfyUI generations use the same worker, Prometheus observer, MLflow experiment `ltx-lab`, and Report page. Graph parameters and node timings are MLflow params/metrics plus `comfy/` artifacts. On Report, pick **Compare B** to diff two sessions (wall time, size, changed node inputs). MLflow can compare the same two `run_id`s.
 
 ## Grafana / Prometheus
 
